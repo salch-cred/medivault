@@ -83,10 +83,12 @@ function ScanInner() {
 
         conn.on('data', (data: any) => {
           if (data && data.type === 'APPROVED') {
+            peerStatusRef.current = 'approved'
             setPeerStatus('approved')
             setDecryptedText(data.payload)
             peer.destroy()
           } else if (data && data.type === 'DENIED') {
+            peerStatusRef.current = 'denied'
             setPeerStatus('denied')
             setError('The owner denied your request for access.')
             peer.destroy()
