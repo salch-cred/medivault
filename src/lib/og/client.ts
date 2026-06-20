@@ -74,6 +74,13 @@ export async function connectWallet(): Promise<WalletContext> {
     const randomWallet = ethers.Wallet.createRandom()
     privateKey = randomWallet.privateKey
     localStorage.setItem('medivault_burner_key', privateKey)
+    import('sonner').then(({ toast }) => {
+      toast.success('Created a temporary Burner Wallet for testing.')
+    })
+  } else {
+    import('sonner').then(({ toast }) => {
+      toast.info('Connected to your existing temporary Burner Wallet.')
+    })
   }
   const wallet = new ethers.Wallet(privateKey, rpcProvider)
   
