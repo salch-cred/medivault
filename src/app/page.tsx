@@ -323,19 +323,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2 font-medium">
             <ShieldPlus className="h-4 w-4" /> MediVault
           </div>
-          <div className="flex items-center gap-4">
-            <p>© {new Date().getFullYear()} — Built for 0G Zero Cup</p>
-            <span className="hidden h-4 w-px bg-border/40 md:block" />
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground/80">by</span>
-              <a href="https://x.com/sahilvishnaliya?s=21" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 transition-colors hover:text-foreground">
-                <Twitter className="h-3.5 w-3.5" /> Sahil
-              </a>
-              <a href="https://x.com/salmanch_?s=11" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 transition-colors hover:text-foreground">
-                <Twitter className="h-3.5 w-3.5" /> Sal
-              </a>
-            </div>
-          </div>
+          <p>© {new Date().getFullYear()} — Built for 0G Zero Cup</p>
           <div className="flex items-center gap-3">
             <a href="https://x.com/sahilvishnaliya?s=21" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground">
               <Twitter className="h-3.5 w-3.5" /> Sahil
