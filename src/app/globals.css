@@ -91,6 +91,30 @@
 }
 
 @media print {
+  :root {
+    --background: 0 0% 100% !important;
+    --foreground: 0 0% 9% !important;
+    --card: 0 0% 100% !important;
+    --card-foreground: 0 0% 9% !important;
+    --popover: 0 0% 100% !important;
+    --popover-foreground: 0 0% 9% !important;
+    --primary: 0 0% 9% !important;
+    --primary-foreground: 0 0% 98% !important;
+    --secondary: 0 0% 96% !important;
+    --secondary-foreground: 0 0% 9% !important;
+    --muted: 0 0% 96% !important;
+    --muted-foreground: 0 0% 45% !important;
+    --accent: 0 0% 96% !important;
+    --accent-foreground: 0 0% 9% !important;
+    --destructive: 0 84% 60% !important;
+    --destructive-foreground: 0 0% 98% !important;
+    --success: 152 58% 36% !important;
+    --success-foreground: 0 0% 100% !important;
+    --border: 0 0% 90% !important;
+    --input: 0 0% 90% !important;
+    --ring: 0 0% 9% !important;
+  }
+
   body {
     background-color: white !important;
     color: black !important;
@@ -102,7 +126,7 @@
     display: none !important;
   }
 
-  header {
+  header, nav, footer, aside {
     display: none !important;
   }
 }
