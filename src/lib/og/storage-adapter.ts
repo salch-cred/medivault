@@ -20,6 +20,34 @@ import type { StorageAdapter } from './adapters'
 
 type Tuple<T> = [T, unknown]
 
+function proxyNodeUrls(indexer: any) {
+  if (typeof window === 'undefined') return
+
+  const originalGetShardedNodes = indexer.getShardedNodes.bind(indexer)
+  indexer.getShardedNodes = async (...args: any[]) => {
+    const res = await originalGetShardedNodes(...args)
+    if (res && res.trusted) {
+      res.trusted = res.trusted.map((node: any) => ({
+        ...node,
+        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(node.url)}`
+      }))
+    }
+    return res
+  }
+
+  const originalGetFileLocations = indexer.getFileLocations.bind(indexer)
+  indexer.getFileLocations = async (...args: any[]) => {
+    const res = await originalGetFileLocations(...args)
+    if (Array.isArray(res)) {
+      return res.map((loc: any) => ({
+        ...loc,
+        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(loc.url)}`
+      }))
+    }
+    return res
+  }
+}
+
 export class OgStorageAdapter implements StorageAdapter {
   private readonly indexer: Indexer
   private readonly signer: ethers.Signer
@@ -27,6 +55,7 @@ export class OgStorageAdapter implements StorageAdapter {
   constructor(signer: ethers.Signer, indexerRpc: string = ZG.INDEXER_RPC) {
     this.signer = signer
     this.indexer = new Indexer(indexerRpc)
+    proxyNodeUrls(this.indexer)
   }
 
   /** AES-256 encrypted upload of a File (browser) or in-memory bytes. */

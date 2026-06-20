@@ -35,6 +35,34 @@ function decodeBase64Safe(value: string): Uint8Array | null {
   }
 }
 
+function proxyNodeUrls(indexer: any) {
+  if (typeof window === 'undefined') return
+
+  const originalGetShardedNodes = indexer.getShardedNodes.bind(indexer)
+  indexer.getShardedNodes = async (...args: any[]) => {
+    const res = await originalGetShardedNodes(...args)
+    if (res && res.trusted) {
+      res.trusted = res.trusted.map((node: any) => ({
+        ...node,
+        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(node.url)}`
+      }))
+    }
+    return res
+  }
+
+  const originalGetFileLocations = indexer.getFileLocations.bind(indexer)
+  indexer.getFileLocations = async (...args: any[]) => {
+    const res = await originalGetFileLocations(...args)
+    if (Array.isArray(res)) {
+      return res.map((loc: any) => ({
+        ...loc,
+        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(loc.url)}`
+      }))
+    }
+    return res
+  }
+}
+
 export class KvIndexAdapter implements IndexAdapter {
   private readonly signer: ethers.Signer
   private readonly indexer: Indexer
@@ -47,7 +75,26 @@ export class KvIndexAdapter implements IndexAdapter {
     this.owner = owner
     this.streamId = deriveStreamId(owner)
     this.indexer = new Indexer(ZG.INDEXER_RPC)
+    proxyNodeUrls(this.indexer)
     this.kv = new KvClient(ZG.KV_NODE_URL)
+  }
+
+  private saveToLocalStorage(record: RecordMeta) {
+    if (typeof window === 'undefined') return
+    try {
+      const key = `medivault_local_records_${this.owner.toLowerCase()}`
+      const existing = localStorage.getItem(key)
+      const list: RecordMeta[] = existing ? JSON.parse(existing) : []
+      const index = list.findIndex(r => r.id === record.id)
+      if (index > -1) {
+        list[index] = record
+      } else {
+        list.push(record)
+      }
+      localStorage.setItem(key, JSON.stringify(list))
+    } catch (e) {
+      console.warn('Failed to save to localStorage fallback:', e)
+    }
   }
 
   private async write(entries: { key: string; value: Uint8Array }[]): Promise<void> {
@@ -120,25 +167,64 @@ export class KvIndexAdapter implements IndexAdapter {
   }
 
   async put(record: RecordMeta): Promise<void> {
-    const ids = await this.readIdList()
-    const nextIds = ids.includes(record.id) ? ids : [...ids, record.id]
+    // Save to local storage first as a guaranteed client-side fallback
+    this.saveToLocalStorage(record)
 
-    const enc = (v: unknown) => new TextEncoder().encode(JSON.stringify(v))
-    await this.write([
-      { key: record.id, value: enc(record) },
-      { key: KV_INDEX_LIST_KEY, value: enc(nextIds) },
-    ])
+    try {
+      const ids = await this.readIdList()
+      const nextIds = ids.includes(record.id) ? ids : [...ids, record.id]
+
+      const enc = (v: unknown) => new TextEncoder().encode(JSON.stringify(v))
+      await this.write([
+        { key: record.id, value: enc(record) },
+        { key: KV_INDEX_LIST_KEY, value: enc(nextIds) },
+      ])
+    } catch (e) {
+      console.warn('Failed to write metadata to 0G KV (stored locally instead):', e)
+    }
   }
 
   async get(id: string): Promise<RecordMeta | null> {
-    return this.readJson<RecordMeta>(id)
+    const record = await this.readJson<RecordMeta>(id)
+    if (record) return record
+
+    if (typeof window !== 'undefined') {
+      try {
+        const key = `medivault_local_records_${this.owner.toLowerCase()}`
+        const existing = localStorage.getItem(key)
+        if (existing) {
+          const list: RecordMeta[] = JSON.parse(existing)
+          return list.find((r) => r.id === id) || null
+        }
+      } catch (e) {
+        console.warn('Failed to read from localStorage fallback:', e)
+      }
+    }
+    return null
   }
 
   async list(owner: string): Promise<RecordMeta[]> {
-    const ids = await this.readIdList()
-    const records = await Promise.all(ids.map((id) => this.get(id)))
-    return records
-      .filter((r): r is RecordMeta => !!r && r.owner.toLowerCase() === owner.toLowerCase())
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    let list: RecordMeta[] = []
+    try {
+      const ids = await this.readIdList()
+      const records = await Promise.all(ids.map((id) => this.get(id)))
+      list = records.filter((r): r is RecordMeta => !!r && r.owner.toLowerCase() === owner.toLowerCase())
+    } catch (e) {
+      console.warn('Failed to list records from 0G KV index:', e)
+    }
+
+    if (list.length === 0 && typeof window !== 'undefined') {
+      try {
+        const key = `medivault_local_records_${owner.toLowerCase()}`
+        const existing = localStorage.getItem(key)
+        if (existing) {
+          list = JSON.parse(existing)
+        }
+      } catch (e) {
+        console.warn('Failed to read fallback list from localStorage:', e)
+      }
+    }
+
+    return list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   }
 }
