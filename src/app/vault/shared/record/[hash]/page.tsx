@@ -114,7 +114,7 @@ export default function SharedRecordPage() {
           <div>
             <h1 className="text-2xl font-bold">{title}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="secondary">{DOC_TYPE_LABELS[docType]}</Badge>
+              <Badge variant="secondary">{(DOC_TYPE_LABELS as any)[docType] || docType}</Badge>
               <span className="text-sm text-muted-foreground">Document Date: {formatDate(date)}</span>
             </div>
             <div className="mt-2">
