@@ -14,6 +14,8 @@ import { normalizeExtraction } from '@/lib/ai/normalize'
 import { buildAuthHeader } from '@/lib/client/auth'
 import { deriveRecordKey, newRecordSalt, saltToHex } from '@/lib/og/crypto'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
+import { ZG } from '@/lib/og/config'
+import { ethers } from 'ethers'
 import { cn } from '@/lib/utils'
 
 type Stage = 'idle' | 'parsing' | 'analyzing' | 'encrypting' | 'indexing' | 'done'
@@ -69,6 +71,14 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         setStage('encrypting')
         setPct(70)
+        
+        // Ensure the auto-wallet has enough testnet gas for the 0G upload.
+        const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
+        const balance = await provider.getBalance(autoWalletAddress!)
+        if (balance === 0n) {
+          throw new Error('Insufficient 0G gas! Please click "Fund Auto-Wallet" in the status panel on the right.')
+        }
+
         // Derive a per-record AES key so each upload uses a distinct key.
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
