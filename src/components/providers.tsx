@@ -32,6 +32,7 @@ const ethersConfig = defaultConfig({
 createWeb3Modal({
   ethersConfig,
   chains: [aristotle],
+  defaultChain: aristotle,
   projectId,
   enableAnalytics: false,
   enableSwaps: false,
