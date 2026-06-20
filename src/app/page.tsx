@@ -190,13 +190,13 @@ export default function LandingPage() {
           >
             <motion.a
               variants={staggerItem}
-              href="https://faucet.0g.ai"
+              href="https://0g.ai"
               target="_blank"
               rel="noreferrer"
               className="group mb-7 inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-3.5 py-1.5 text-sm font-medium backdrop-blur-md transition-colors hover:bg-muted/70"
             >
               <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
-              Built on 0G Galileo Testnet
+              Built on 0G Mainnet
               <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </motion.a>
 
@@ -218,16 +218,6 @@ export default function LandingPage() {
                 <Link href="/vault">
                   Open your vault <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="h-14 w-full rounded-full bg-background/50 px-8 text-base shadow-sm backdrop-blur-md sm:w-auto"
-              >
-                <a href="https://faucet.0g.ai" target="_blank" rel="noreferrer">
-                  Get testnet gas
-                </a>
               </Button>
             </motion.div>
           </motion.div>
