@@ -41,9 +41,12 @@ createWeb3Modal({
   }
 })
 
+import { AutoConnectManager } from '@/components/auto-connect-manager'
+
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <>
+      <AutoConnectManager />
       {children}
       <Toaster />
     </>
