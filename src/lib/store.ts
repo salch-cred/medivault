@@ -105,6 +105,7 @@ export const useVault = create<VaultState>((set, get) => ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ address, publicKey: autoWalletPubKey })
         })
+        await index.registerPublicKey(autoWalletPubKey)
       } catch (pubkeyErr) {
         console.warn('Failed to register public key:', pubkeyErr)
       }

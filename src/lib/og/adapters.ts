@@ -36,4 +36,5 @@ export interface IndexAdapter {
   put(record: RecordMeta): Promise<void>
   list(owner: string): Promise<RecordMeta[]>
   get(id: string): Promise<RecordMeta | null>
+  registerPublicKey(publicKey: string): Promise<void>
 }

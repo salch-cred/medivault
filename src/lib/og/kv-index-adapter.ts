@@ -184,6 +184,17 @@ export class KvIndexAdapter implements IndexAdapter {
     }
   }
 
+  async registerPublicKey(publicKey: string): Promise<void> {
+    try {
+      const enc = (v: string) => new TextEncoder().encode(v)
+      await this.write([
+        { key: '__medivault_pubkey__', value: enc(publicKey) }
+      ])
+    } catch (e) {
+      console.warn('Failed to write public key to 0G KV:', e)
+    }
+  }
+
   async get(id: string): Promise<RecordMeta | null> {
     const record = await this.readJson<RecordMeta>(id)
     if (record) return record

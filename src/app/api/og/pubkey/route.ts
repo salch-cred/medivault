@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { KvClient } from '@0gfoundation/0g-storage-ts-sdk'
+import { ZG } from '@/lib/og/config'
+import { deriveStreamId, kvKeyBytes } from '@/lib/og/crypto'
+import { ethers } from 'ethers'
 
 // Determine writable directory based on environment (Vercel has a writable /tmp)
 const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
@@ -13,6 +17,16 @@ const globalForKeys = global as unknown as {
 }
 if (!globalForKeys.pubkeysMemory) {
   globalForKeys.pubkeysMemory = {}
+}
+
+function decodeBase64Safe(value: string): Uint8Array | null {
+  const v = value.trim()
+  if (!v || v.length % 4 !== 0) return null
+  try {
+    return ethers.decodeBase64(v)
+  } catch {
+    return null
+  }
 }
 
 function readKeys(): Record<string, string> {
@@ -56,7 +70,36 @@ export async function GET(req: Request) {
     }
 
     const keys = readKeys()
-    const pubKey = keys[address]
+    let pubKey = keys[address]
+
+    if (!pubKey) {
+      // Decentralized 0G KV Fallback Lookup
+      try {
+        const kv = new KvClient(ZG.KV_NODE_URL)
+        const streamId = deriveStreamId(address)
+        const val = await kv.getValue(streamId, kvKeyBytes('__medivault_pubkey__'))
+        if (val) {
+          let bytes: Uint8Array | null = null
+          if (typeof val === 'string') {
+            bytes = decodeBase64Safe(val)
+          } else if (val && typeof (val as any).data === 'string') {
+            bytes = decodeBase64Safe((val as any).data)
+          } else if (val instanceof Uint8Array) {
+            bytes = val
+          }
+          if (bytes) {
+            pubKey = new TextDecoder().decode(bytes)
+            if (pubKey && pubKey.startsWith('0x')) {
+              // Cache it locally so subsequent calls don't query 0G KV
+              keys[address] = pubKey
+              writeKeys(keys)
+            }
+          }
+        }
+      } catch (kvErr) {
+        console.warn('Failed to fetch public key from 0G KV node:', kvErr)
+      }
+    }
 
     if (!pubKey) {
       return NextResponse.json({ error: 'Public key not registered for this address' }, { status: 404 })
