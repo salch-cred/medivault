@@ -49,7 +49,7 @@ export default function SharedRecordPage() {
         }
 
         let bytes: Uint8Array | null = null
-        let retries = 5
+        let retries = 30
         let lastErr: any = null
         
         while (retries > 0) {
@@ -92,9 +92,10 @@ export default function SharedRecordPage() {
 
   if (loading) {
     return (
-      <div className="flex h-[50vh] flex-col items-center justify-center gap-3">
+      <div className="flex h-[50vh] flex-col items-center justify-center gap-3 text-center px-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Downloading & decrypting secure record from 0G...</p>
+        <p className="text-sm font-semibold">Downloading & decrypting secure record...</p>
+        <p className="text-xs text-muted-foreground mt-2 max-w-[250px]">The 0G decentralized testnet can sometimes take up to 60 seconds to propagate new files. Please keep this page open.</p>
       </div>
     )
   }
