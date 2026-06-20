@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Database, Cpu, HardDrive, Link2, Droplets, Copy, Wallet, RefreshCw } from 'lucide-react'
+import { Database, Cpu, HardDrive, Link2, Droplets, Copy, Wallet, RefreshCw, Zap } from 'lucide-react'
 import { ethers } from 'ethers'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ZG } from '@/lib/og/config'
 import { useVault } from '@/lib/store'
 import { toast } from 'sonner'
+import Link from 'next/link'
 
 const ITEMS = [
   { icon: Link2, label: 'Chain', value: `0G Galileo · ${ZG.CHAIN_ID}` },
