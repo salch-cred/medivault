@@ -1,46 +1,39 @@
 'use client'
 
-import { Wallet, LogOut, Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { useEffect, useRef } from 'react'
+import { useWeb3ModalAccount, useWeb3ModalProvider } from '@web3modal/ethers/react'
 import { useVault } from '@/lib/store'
-import { shortHash } from '@/lib/utils'
-import { ZG } from '@/lib/og/config'
+import { BrowserProvider } from 'ethers'
 
 export function WalletConnect() {
-  const { status, address, connect, disconnect } = useVault()
+  const { isConnected, address } = useWeb3ModalAccount()
+  const { walletProvider } = useWeb3ModalProvider()
+  const { status, connect, disconnect } = useVault()
+  const lastAddress = useRef<string | undefined>()
 
-  if (status === 'connected' && address) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="hidden rounded-full bg-secondary px-3 py-1.5 font-mono text-xs sm:inline">
-          {shortHash(address, 6, 4)}
-        </span>
-        <Button variant="ghost" size="icon" onClick={disconnect} title="Disconnect">
-          <LogOut className="h-4 w-4" />
-        </Button>
-      </div>
-    )
-  }
+  useEffect(() => {
+    // When Web3Modal connects, sync with our Zustand store
+    if (isConnected && address && walletProvider && status === 'disconnected') {
+      const provider = new BrowserProvider(walletProvider)
+      connect(provider, address)
+    }
+    
+    // When Web3Modal disconnects or switches accounts, reset our store
+    if (!isConnected && status !== 'disconnected') {
+      disconnect()
+    } else if (isConnected && address && lastAddress.current && address !== lastAddress.current) {
+      disconnect()
+    }
+    lastAddress.current = address
+  }, [isConnected, address, walletProvider, status, connect, disconnect])
 
   return (
-    <Button
-      onClick={async () => {
-        try {
-          await connect()
-        } catch (e) {
-          toast.error(e instanceof Error ? e.message : 'Failed to connect')
-        }
-      }}
-      disabled={status === 'connecting'}
-    >
-      {status === 'connecting' ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Wallet className="h-4 w-4" />
-      )}
-      {status === 'connecting' ? 'Connecting…' : 'Connect wallet'}
-      <span className="sr-only">on {ZG.CHAIN_NAME}</span>
-    </Button>
+    <div className="flex items-center">
+      {/* 
+        This is the official Web3Modal button that handles the QR code modal, 
+        wallet selection, deep linking on mobile, and the user's address/balance display.
+      */}
+      <w3m-button balance="hide" size="md" />
+    </div>
   )
 }

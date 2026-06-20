@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { ethers } from 'ethers'
-import { connectWallet } from '@/lib/og/client'
+
 import { deriveVaultKey, deriveAutoWalletPk, recordKey } from '@/lib/og/crypto'
 import { OgStorageAdapter } from '@/lib/og/storage-adapter'
 import { KvIndexAdapter } from '@/lib/og/kv-index-adapter'
@@ -36,7 +36,7 @@ type VaultState = {
   emergency: {
     bloodType: string
   }
-  connect: () => Promise<void>
+  connect: (provider: ethers.BrowserProvider, address: string) => Promise<void>
   disconnect: () => void
   refresh: () => Promise<void>
   loadSummary: (meta: RecordMeta) => Promise<ExtractionResult | null>
@@ -65,22 +65,16 @@ export const useVault = create<VaultState>((set, get) => ({
   eli5: false,
   emergency: { bloodType: '' },
 
-  connect: async () => {
+  connect: async (provider: ethers.BrowserProvider, address: string) => {
     set({ status: 'connecting', error: null })
     try {
-      const { signer, address } = await connectWallet()
+      const signer = await provider.getSigner()
       const key = await deriveVaultKey(signer)
       const autoWalletPk = await deriveAutoWalletPk(signer)
 
       // Use deterministic auto-wallet for gas/transactions
-      let rpcProvider: ethers.JsonRpcProvider
-      if (typeof window !== 'undefined' && window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum as ethers.Eip1193Provider)
-        const network = await provider.getNetwork()
-        rpcProvider = new ethers.JsonRpcProvider(ZG.RPC_URL, network, { staticNetwork: network })
-      } else {
-        rpcProvider = new ethers.JsonRpcProvider(ZG.RPC_URL)
-      }
+      const network = await provider.getNetwork()
+      const rpcProvider = new ethers.JsonRpcProvider(ZG.RPC_URL, network, { staticNetwork: network })
       const storageSigner = new ethers.Wallet(autoWalletPk, rpcProvider)
 
       const storage = new OgStorageAdapter(storageSigner)
