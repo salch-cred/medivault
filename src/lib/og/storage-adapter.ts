@@ -45,16 +45,34 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    const [tx, upErr] = (await (this.indexer as unknown as {
-      upload: (
-        b: unknown,
-        rpc: string,
-        signer: ethers.Signer,
-        opts: unknown,
-      ) => Promise<Tuple<{ txHash?: string } | string>>
-    }).upload(blob, ZG.RPC_URL, this.signer, {
-      encryption: { type: 'aes256', key },
-    })) as Tuple<{ txHash?: string } | string>
+    // Flaky 0G testnet RPC nodes often drop connections causing "Network Error".
+    // We wrap the upload in a retry loop.
+    let tx: unknown
+    let upErr: unknown
+    let retries = 3
+    while (retries > 0) {
+      const [attemptTx, attemptErr] = (await (this.indexer as unknown as {
+        upload: (
+          b: unknown,
+          rpc: string,
+          signer: ethers.Signer,
+          opts: unknown,
+        ) => Promise<Tuple<{ txHash?: string } | string>>
+      }).upload(blob, ZG.RPC_URL, this.signer, {
+        encryption: { type: 'aes256', key },
+      })) as Tuple<{ txHash?: string } | string>
+      
+      tx = attemptTx
+      upErr = attemptErr
+      if (!upErr) break
+      
+      retries--
+      if (retries > 0) {
+        console.warn(`0G upload failed, retrying... (${retries} attempts left)`, attemptErr)
+        await new Promise(r => setTimeout(r, 1500))
+      }
+    }
+    
     if (upErr) throw new Error(String(upErr))
 
     const txHash =
