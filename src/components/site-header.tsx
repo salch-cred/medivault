@@ -20,14 +20,14 @@ const NAV = [
 export function SiteHeader() {
   const pathname = usePathname()
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-neutral-900 bg-black transition-all pt-safe md:hidden">
+    <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/90 backdrop-blur-xl transition-all shadow-sm pt-safe">
       <div className="container flex h-14 items-center justify-between gap-3 md:h-16">
         <Link href="/" className="flex items-center gap-2 font-bold group">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white text-black shadow-md transition-transform group-active:scale-95 md:h-9 md:w-9">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-md transition-transform group-active:scale-95 md:h-9 md:w-9">
             <ShieldPlus className="h-4 w-4 md:h-5 md:w-5" />
           </span>
           {/* Brand always visible on mobile (it's the only nav cue up top). */}
-          <span className="inline-block text-base font-bold tracking-tight text-white font-serif italic md:text-lg">
+          <span className="inline-block text-base tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent md:text-lg">
             MediVault
           </span>
         </Link>

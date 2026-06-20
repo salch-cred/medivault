@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* MOBILE: PITCH BLACK AND GRAY MIX THEME */
     --background: 0 0% 0%;
     --foreground: 0 0% 98%;
     --card: 0 0% 7%;
@@ -28,7 +29,35 @@
     --radius: 1rem;
   }
 
+  /* DESKTOP (768px and above): SLEEK LIGHT THEME */
+  @media (min-width: 768px) {
+    :root {
+      --background: 0 0% 100%;
+      --foreground: 0 0% 9%;
+      --card: 0 0% 100%;
+      --card-foreground: 0 0% 9%;
+      --popover: 0 0% 100%;
+      --popover-foreground: 0 0% 9%;
+      --primary: 0 0% 9%;
+      --primary-foreground: 0 0% 98%;
+      --secondary: 0 0% 96%;
+      --secondary-foreground: 0 0% 9%;
+      --muted: 0 0% 96%;
+      --muted-foreground: 0 0% 45%;
+      --accent: 0 0% 96%;
+      --accent-foreground: 0 0% 9%;
+      --destructive: 0 84% 60%;
+      --destructive-foreground: 0 0% 98%;
+      --success: 152 58% 36%;
+      --success-foreground: 0 0% 100%;
+      --border: 0 0% 90%;
+      --input: 0 0% 90%;
+      --ring: 0 0% 9%;
+    }
+  }
+
   .dark {
+    /* Retain dark variables for components that explicitly check .dark class */
     --background: 0 0% 0%;
     --foreground: 0 0% 98%;
     --card: 0 0% 7%;
@@ -65,6 +94,7 @@
   .print\:hidden {
     display: none !important;
   }
+
   header {
     display: none !important;
   }
@@ -79,13 +109,16 @@
 .pt-safe {
   padding-top: env(safe-area-inset-top);
 }
+
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
 .px-safe {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
+
 .h-safe-top {
   height: env(safe-area-inset-top);
 }
@@ -111,7 +144,9 @@ select,
 textarea {
   font-size: 16px;
 }
+
 @media (min-width: 768px) {
+
   input,
   select,
   textarea {
@@ -123,6 +158,7 @@ textarea {
    transforms globally so nothing moves. framer-motion also honors this via
    its own MotionConfig, but this catches raw CSS/keyframe animation too. */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
