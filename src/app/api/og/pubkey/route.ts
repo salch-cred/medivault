@@ -132,6 +132,25 @@ export async function GET(req: Request) {
     const keys = readKeys()
     let pubKey = keys[address]
 
+    // Persistent database lookup fallback (keyvalue.immanuel.co)
+    if (!pubKey) {
+      try {
+        const getUrl = `https://keyvalue.immanuel.co/api/KeyVal/GetValue/p0vd5ml2/${address}`
+        const res = await fetch(getUrl)
+        if (res.ok) {
+          const val = await res.text()
+          const cleaned = val.replace(/"/g, '').trim()
+          if (cleaned && cleaned.startsWith('0x')) {
+            pubKey = cleaned
+            keys[address] = pubKey
+            writeKeys(keys)
+          }
+        }
+      } catch (dbErr) {
+        console.warn('Persistent DB lookup failed:', dbErr)
+      }
+    }
+
     if (!pubKey) {
       // 0G KV Fallback Lookup
       try {
@@ -149,6 +168,10 @@ export async function GET(req: Request) {
               pubKey = decoded
               keys[address] = pubKey
               writeKeys(keys)
+              // Sync back to persistent DB
+              try {
+                await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/p0vd5ml2/${address}/${pubKey}`, { method: 'POST' })
+              } catch {}
             }
           }
         }
@@ -165,6 +188,10 @@ export async function GET(req: Request) {
           pubKey = recovered
           keys[address] = pubKey
           writeKeys(keys)
+          // Sync back to persistent DB
+          try {
+            await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/p0vd5ml2/${address}/${pubKey}`, { method: 'POST' })
+          } catch {}
         }
       } catch (chainErr) {
         console.warn('On-chain recovery failed:', chainErr)
@@ -192,9 +219,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing address or publicKey parameter' }, { status: 400 })
     }
 
+    const addrLower = address.toLowerCase()
     const keys = readKeys()
-    keys[address.toLowerCase()] = publicKey
+    keys[addrLower] = publicKey
     writeKeys(keys)
+
+    // Save to persistent database (keyvalue.immanuel.co)
+    try {
+      await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/p0vd5ml2/${addrLower}/${publicKey}`, { method: 'POST' })
+    } catch (dbErr) {
+      console.warn('Failed to save to persistent DB:', dbErr)
+    }
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
