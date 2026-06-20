@@ -75,8 +75,10 @@ export const useVault = create<VaultState>((set, get) => ({
       const autoWalletPk = await deriveAutoWalletPk(signer)
 
       // Use deterministic auto-wallet for gas/transactions
-      const network = await provider.getNetwork()
-      const rpcProvider = new ethers.JsonRpcProvider(ZG.RPC_URL, network, { staticNetwork: network })
+      const rpcProvider = new ethers.JsonRpcProvider(ZG.RPC_URL, {
+        chainId: ZG.CHAIN_ID,
+        name: ZG.CHAIN_NAME
+      }, { staticNetwork: true })
       const storageSigner = new ethers.Wallet(autoWalletPk, rpcProvider)
 
       const storage = new OgStorageAdapter(storageSigner)
