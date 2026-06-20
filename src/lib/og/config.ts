@@ -5,8 +5,14 @@
 // only via environment variables.
 
 function getEnvUrl(envVal: string | undefined, defaultUrl: string) {
-  // Ignore empty strings, or placeholder strings filled with dots from template copy-pastes
-  if (!envVal || envVal.trim() === '' || envVal.includes('...')) {
+  // Only accept the env value if it is a real http/https URL.
+  // This prevents broken placeholder values (e.g. "................", "", "https://...")
+  // from crashing ethers.js with "unsupported protocol" errors.
+  if (
+    !envVal ||
+    envVal.trim() === '' ||
+    !envVal.startsWith('http')
+  ) {
     return defaultUrl
   }
   return envVal
