@@ -91,6 +91,13 @@
 }
 
 @media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
   .print\:hidden {
     display: none !important;
   }
