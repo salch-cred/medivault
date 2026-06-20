@@ -10,11 +10,32 @@ let cachedMasterSeed: string | null = null
 
 export function clearMasterSeed() {
   cachedMasterSeed = null
+  if (typeof window !== 'undefined') {
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith('medivault_seed_')) {
+        localStorage.removeItem(key)
+      }
+    })
+  }
 }
 
 async function getMasterSeed(signer: ethers.Signer): Promise<string> {
   if (!cachedMasterSeed) {
+    const address = await signer.getAddress()
+    const storageKey = `medivault_seed_${address.toLowerCase()}`
+
+    if (typeof window !== 'undefined') {
+      const fromStorage = localStorage.getItem(storageKey)
+      if (fromStorage) {
+        cachedMasterSeed = fromStorage
+        return cachedMasterSeed
+      }
+    }
+
     cachedMasterSeed = await signer.signMessage(MASTER_SEED_MESSAGE)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(storageKey, cachedMasterSeed)
+    }
   }
   return cachedMasterSeed
 }
