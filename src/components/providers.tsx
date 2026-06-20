@@ -7,7 +7,7 @@ import { ZG } from '@/lib/og/config'
 // Use a demo project ID. The user should replace this in production.
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'b56e18d47c72ab683b10814fe9495694'
 
-const galileo = {
+const aristotle = {
   chainId: ZG.CHAIN_ID,
   name: ZG.CHAIN_NAME,
   currency: ZG.CURRENCY.symbol,
@@ -31,7 +31,7 @@ const ethersConfig = defaultConfig({
 
 createWeb3Modal({
   ethersConfig,
-  chains: [galileo],
+  chains: [aristotle],
   projectId,
   enableAnalytics: false,
   enableSwaps: false,
