@@ -10,6 +10,8 @@ import { HealthTimeline } from '@/components/health-timeline'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useVaultRecords } from '@/hooks/use-vault-records'
+import { useVault } from '@/lib/store'
+import { ReceivedRecords } from '@/components/received-records'
 import { upcomingFollowUps } from '@/lib/health'
 import { formatDate } from '@/lib/utils'
 import { staggerContainer, staggerItem } from '@/lib/motion'
@@ -120,6 +122,16 @@ export default function VaultDashboard() {
                 </div>
                 <div className="rounded-3xl border border-border/50 bg-background/60 p-1 shadow-lg backdrop-blur-xl">
                   <RecordList />
+                </div>
+              </motion.div>
+
+              <motion.div variants={itemVariants} className="space-y-4 pt-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold tracking-tight md:text-xl">Shared with You (Clinician View)</h2>
+                  <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">ECIES Decrypted</Badge>
+                </div>
+                <div className="rounded-3xl border border-border/50 bg-background/60 p-1 shadow-lg backdrop-blur-xl">
+                  <ReceivedRecords />
                 </div>
               </motion.div>
             </div>

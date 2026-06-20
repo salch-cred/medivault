@@ -23,6 +23,9 @@ export interface StorageAdapter {
 
   /** Verify the stored ciphertext still matches its Merkle root. */
   verifyIntegrity(rootHash: string): Promise<boolean>
+
+  /** Download ECIES ciphertext from 0G and decrypt using private key. */
+  downloadDecryptedShared(rootHash: string, privateKey: string): Promise<Uint8Array>
 }
 
 /**

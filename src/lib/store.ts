@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { ethers } from 'ethers'
 
-import { deriveVaultKey, deriveAutoWalletPk, recordKey, clearMasterSeed } from '@/lib/og/crypto'
+import { deriveVaultKey, deriveAutoWalletPk, recordKey, clearMasterSeed, recoverUserPublicKey } from '@/lib/og/crypto'
 import { OgStorageAdapter } from '@/lib/og/storage-adapter'
 import { KvIndexAdapter } from '@/lib/og/kv-index-adapter'
 import {
@@ -31,6 +31,7 @@ type VaultState = {
   index: KvIndexAdapter | null
   records: RecordMeta[]
   summaries: Record<string, ExtractionResult>
+  receivedRecords: any[]
   loadingRecords: boolean
   language: string
   eli5: boolean
@@ -62,6 +63,7 @@ export const useVault = create<VaultState>((set, get) => ({
   index: null,
   records: [],
   summaries: {},
+  receivedRecords: [],
   loadingRecords: false,
   language: 'English',
   eli5: false,
@@ -95,6 +97,18 @@ export const useVault = create<VaultState>((set, get) => ({
         cachedSummaries = await loadCachedSummaries(address, key)
       } catch (e) {}
 
+      // Register Auto-Wallet public key on the backend so others can encrypt shares for us
+      try {
+        const autoWalletPubKey = ethers.SigningKey.computePublicKey(autoWalletPk, true)
+        await fetch('/api/og/pubkey', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address, publicKey: autoWalletPubKey })
+        })
+      } catch (pubkeyErr) {
+        console.warn('Failed to register public key:', pubkeyErr)
+      }
+
       set({
         status: 'connected',
         address,
@@ -106,6 +120,7 @@ export const useVault = create<VaultState>((set, get) => ({
         index,
         records: cachedRecords,
         summaries: cachedSummaries,
+        receivedRecords: [],
       })
       await get().refresh()
     } catch (err) {
@@ -134,6 +149,7 @@ export const useVault = create<VaultState>((set, get) => ({
       index: null,
       records: [],
       summaries: {},
+      receivedRecords: [],
     })
   },
 
@@ -146,6 +162,13 @@ export const useVault = create<VaultState>((set, get) => ({
       set({ records: networkRecords, error: null })
       if (key) {
         await saveCachedRecords(address, key, networkRecords)
+      }
+
+      // Fetch records shared WITH this user/doctor
+      const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`)
+      if (sharedRes.ok) {
+        const sharedData = await sharedRes.json()
+        set({ receivedRecords: sharedData })
       }
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Failed to load records.' })

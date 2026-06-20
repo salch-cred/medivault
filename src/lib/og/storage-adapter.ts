@@ -194,6 +194,25 @@ export class OgStorageAdapter implements StorageAdapter {
     if (headerErr) throw new Error(String(headerErr))
     return header
   }
+
+  /** Download ECIES ciphertext from 0G and decrypt using private key. */
+  async downloadDecryptedShared(
+    rootHash: string,
+    privateKey: string,
+  ): Promise<Uint8Array> {
+    const [blob, err] = (await (this.indexer as unknown as {
+      downloadToBlob: (
+        root: string,
+        opts: unknown,
+      ) => Promise<Tuple<Blob>>
+    }).downloadToBlob(rootHash, {
+      proof: true,
+      decryption: { privateKey },
+    })) as Tuple<Blob>
+    if (err) throw new Error(String(err))
+    const buf = await (blob as Blob).arrayBuffer()
+    return new Uint8Array(buf)
+  }
 }
 
 /** Node/server-side factory (used only for optional server ops). */

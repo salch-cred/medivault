@@ -31,6 +31,17 @@ export async function deriveVaultKey(
 }
 
 /**
+ * Recover the public key of the signer from the master seed signature.
+ */
+export async function recoverUserPublicKey(
+  signer: ethers.Signer,
+): Promise<string> {
+  const seed = await getMasterSeed(signer)
+  const messageHash = ethers.hashMessage(MASTER_SEED_MESSAGE)
+  return ethers.SigningKey.recoverPublicKey(messageHash, seed)
+}
+
+/**
  * Derive a deterministic private key for the Auto-Wallet from a wallet signature.
  * Returns a 0x-prefixed hex string (32 bytes).
  */

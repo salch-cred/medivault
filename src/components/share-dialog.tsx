@@ -27,41 +27,84 @@ export function ShareDialog({
   meta: RecordMeta
   summary?: ExtractionResult
 }) {
-  const { storage } = useVault()
-  const [pubKey, setPubKey] = useState('')
+  const { storage, address: senderAddress } = useVault()
+  const [doctorInput, setDoctorInput] = useState('')
+  const [senderName, setSenderName] = useState('')
   const [sharing, setSharing] = useState(false)
   const [shareHash, setShareHash] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   async function share() {
-    if (!storage) {
+    if (!storage || !senderAddress) {
       toast.error('Connect your wallet first.')
       return
     }
-    const trimmed = pubKey.trim()
-    if (!trimmed) {
-      toast.error('Enter the doctor’s public key.')
+    const targetDoc = doctorInput.trim()
+    const name = senderName.trim()
+    if (!targetDoc) {
+      toast.error('Enter the doctor’s wallet address.')
+      return
+    }
+    if (!name) {
+      toast.error('Enter your name so the doctor knows who sent it.')
       return
     }
     try {
       setSharing(true)
+      
+      let resolvedPubKey = ''
+      
+      // If it looks like a wallet address (42 chars, starts with 0x)
+      if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
+        const lookupRes = await fetch(`/api/og/pubkey?address=${encodeURIComponent(targetDoc)}`)
+        if (!lookupRes.ok) {
+          throw new Error('This doctor address has not registered their public key yet. They need to connect their wallet to MediVault first.')
+        }
+        const data = await lookupRes.json()
+        resolvedPubKey = data.publicKey
+      } else {
+        resolvedPubKey = targetDoc
+      }
+      
       // Validate / normalize the recipient public key up front.
-      ethers.SigningKey.computePublicKey(trimmed, true)
-      // NOTE: we deliberately do NOT include meta.rootHash (the owner's
-      // AES-encrypted record) — the doctor cannot decrypt it because it was
-      // encrypted to the owner's vault key, not their ECIES key. Only the
-      // plain-language summary is shared, ECIES-encrypted to the doctor.
+      ethers.SigningKey.computePublicKey(resolvedPubKey, true)
+      
+      const sharedAt = new Date().toISOString()
+      
       const payload = {
         title: meta.title,
         docType: meta.docType,
         date: meta.date,
-        sharedAt: new Date().toISOString(),
+        sharedAt,
+        senderName: name,
+        senderAddress,
         summary: summary ?? null,
       }
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
-      const { rootHash } = await storage.shareToRecipient(bytes, trimmed)
+      const { rootHash } = await storage.shareToRecipient(bytes, resolvedPubKey)
+      
+      // Register share event on the backend registry so it shows in doctor's dashboard
+      const regRes = await fetch('/api/og/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientAddress: targetDoc,
+          senderName: name,
+          senderAddress,
+          title: meta.title,
+          docType: meta.docType,
+          date: meta.date,
+          sharedAt,
+          rootHash,
+        })
+      })
+      
+      if (!regRes.ok) {
+        throw new Error('Successfully stored on 0G, but failed to notify doctor dashboard.')
+      }
+
       setShareHash(rootHash)
-      toast.success('Encrypted to the doctor’s key and stored on 0G')
+      toast.success('Encrypted securely and shared directly to the doctor’s dashboard!')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Share failed')
     } finally {
@@ -80,25 +123,35 @@ export function ShareDialog({
         <DialogHeader>
           <DialogTitle>Share securely with a doctor</DialogTitle>
           <DialogDescription>
-            This record is re-encrypted to the doctor’s wallet public key (ECIES) and stored on
-            0G. Only their private key can decrypt it — not even you can read the shared copy.
+            Re-encrypts this record securely to the doctor’s key and posts it directly to their dashboard.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          <Label htmlFor="pubkey">Doctor’s public key</Label>
-          <Input
-            id="pubkey"
-            placeholder="0x04… (uncompressed or compressed secp256k1 public key)"
-            value={pubKey}
-            onChange={(e) => setPubKey(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Ask the doctor for their wallet’s public key (not their private key).
-          </p>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="senderName">Your Name</Label>
+            <Input
+              id="senderName"
+              placeholder="e.g., Maria Khan"
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctorAddress">Doctor’s Wallet Address</Label>
+            <Input
+              id="doctorAddress"
+              placeholder="0x… (EVM wallet address of the doctor)"
+              value={doctorInput}
+              onChange={(e) => setDoctorInput(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Enter the doctor's wallet address. They must have connected to MediVault at least once.
+            </p>
+          </div>
         </div>
         {shareHash ? (
           <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
-            <p className="font-medium text-emerald-800">Shared. Give the doctor this root hash:</p>
+            <p className="font-medium text-emerald-800">Shared! Secure root hash on 0G:</p>
             <div className="flex items-center gap-2">
               <a
                 href={storageScanUrl(shareHash)}
