@@ -329,33 +329,38 @@ function RecordView({ meta }: { meta: RecordMeta }) {
         <Disclaimer />
       </div>
 
-      {summary && (
-        <div className="hidden print:block print:bg-white print:text-black">
-          <div className="mb-6 rounded-t-xl bg-red-600 p-6 text-white" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-            <h1 className="text-3xl font-bold">MediVault Official Record</h1>
-            <h2 className="mt-2 text-xl opacity-90">{meta.title}</h2>
-            <div className="mt-2 flex gap-4 text-sm opacity-80">
-              <span>Date: {formatDate(meta.date)}</span>
-              <span>Type: {DOC_TYPE_LABELS[meta.docType]}</span>
+             <div className="hidden print:block print:bg-white print:text-black">
+          {/* Header section with a clean, classic medical look */}
+          <div className="mb-8 border-b-4 border-neutral-900 pb-6" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+            <div className="flex justify-between items-end">
+              <div>
+                <h1 className="text-4xl font-black text-black tracking-tight uppercase">MediVault</h1>
+                <p className="text-sm font-semibold text-neutral-600 mt-1 uppercase tracking-widest">Official Medical Record</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-black">Date: {formatDate(meta.date)}</p>
+                <p className="text-sm text-black">Type: {DOC_TYPE_LABELS[meta.docType]}</p>
+              </div>
             </div>
+            <h2 className="mt-6 text-2xl font-bold text-black">{meta.title}</h2>
           </div>
           
-          <div className="space-y-8 px-6 pb-6">
+          <div className="space-y-8 pb-6">
             <section>
-              <h3 className="mb-2 border-b-2 border-red-200 pb-1 text-lg font-semibold text-red-700">Plain-Language Summary</h3>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
+              <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Clinical Summary</h3>
+              <p className="whitespace-pre-wrap text-base leading-relaxed text-black">
                 {summary.plainLanguageSummary || 'No summary available.'}
               </p>
             </section>
 
             {summary.redFlags.length > 0 && (
               <section>
-                <h3 className="mb-2 border-b-2 border-red-200 pb-1 text-lg font-semibold text-red-700">Red Flags & Alerts</h3>
+                <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Important Alerts</h3>
                 <div className="space-y-3">
                   {summary.redFlags.map((r, i) => (
-                    <div key={i} className="rounded-lg border-l-4 border-red-600 bg-red-50 p-3" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                      <p className="font-medium text-red-900">{r.issue} (Severity: {r.severity})</p>
-                      {r.suggestion && <p className="mt-1 text-sm text-red-800">{r.suggestion}</p>}
+                    <div key={i} className="border-l-4 border-black pl-4 py-1">
+                      <p className="font-bold text-black">{r.issue} <span className="font-normal text-neutral-600 uppercase text-xs ml-2">Severity: {r.severity}</span></p>
+                      {r.suggestion && <p className="mt-1 text-base text-black">{r.suggestion}</p>}
                     </div>
                   ))}
                 </div>
@@ -363,22 +368,22 @@ function RecordView({ meta }: { meta: RecordMeta }) {
             )}
 
             <section>
-              <h3 className="mb-2 border-b-2 border-red-200 pb-1 text-lg font-semibold text-red-700">Extracted Data</h3>
-              <div className="grid grid-cols-2 gap-6">
+              <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Extracted Clinical Data</h3>
+              <div className="grid grid-cols-2 gap-8">
                 <div>
-                  <h4 className="font-semibold text-red-800 mb-2">Conditions</h4>
-                  <ul className="list-inside list-disc text-sm text-gray-800 marker:text-red-600">
+                  <h4 className="font-bold text-black mb-2 text-base">Conditions & Diagnoses</h4>
+                  <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
                     {summary.conditions.length ? summary.conditions.map((c, i) => (
                       <li key={i}>{c.name} {c.status && `(${c.status})`}</li>
-                    )) : <li>None</li>}
+                    )) : <li>None Recorded</li>}
                   </ul>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-red-800 mb-2">Medications</h4>
-                  <ul className="list-inside list-disc text-sm text-gray-800 marker:text-red-600">
+                  <h4 className="font-bold text-black mb-2 text-base">Active Medications</h4>
+                  <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
                     {summary.medications.length ? summary.medications.map((m, i) => (
                       <li key={i}>{m.name} {m.dose && `- ${m.dose}`}</li>
-                    )) : <li>None</li>}
+                    )) : <li>None Recorded</li>}
                   </ul>
                 </div>
               </div>
@@ -386,8 +391,8 @@ function RecordView({ meta }: { meta: RecordMeta }) {
 
             {summary.remedies && summary.remedies.length > 0 && (
               <section>
-                <h3 className="mb-2 border-b-2 border-red-200 pb-1 text-lg font-semibold text-red-700">Recommended Remedies & Care</h3>
-                <ul className="list-inside list-disc text-sm text-gray-800 marker:text-red-600">
+                <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Recommended Remedies & Care</h3>
+                <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
                   {summary.remedies.map((r, i) => (
                     <li key={i}>{r}</li>
                   ))}
@@ -397,24 +402,24 @@ function RecordView({ meta }: { meta: RecordMeta }) {
 
             {summary.labResults.length > 0 && (
               <section>
-                <h3 className="mb-2 border-b-2 border-red-200 pb-1 text-lg font-semibold text-red-700">Lab Results</h3>
-                <table className="w-full border-collapse text-left text-sm">
+                <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Lab Results</h3>
+                <table className="w-full border-collapse text-left text-base text-black">
                   <thead>
-                    <tr className="bg-red-50 text-red-800" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                      <th className="border-b border-red-200 py-2 px-2">Test</th>
-                      <th className="border-b border-red-200 py-2 px-2">Value</th>
-                      <th className="border-b border-red-200 py-2 px-2">Reference</th>
-                      <th className="border-b border-red-200 py-2 px-2">Flag</th>
+                    <tr className="border-b-2 border-black">
+                      <th className="py-2 px-2 font-bold">Test</th>
+                      <th className="py-2 px-2 font-bold">Value</th>
+                      <th className="py-2 px-2 font-bold text-neutral-600">Reference</th>
+                      <th className="py-2 px-2 font-bold">Flag</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-neutral-200">
                     {summary.labResults.map((l, i) => (
-                      <tr key={i} className="border-b border-red-100">
-                        <td className="py-2 px-2 font-medium">{l.test}</td>
+                      <tr key={i}>
+                        <td className="py-2 px-2 font-semibold">{l.test}</td>
                         <td className="py-2 px-2">{l.value} {l.unit}</td>
-                        <td className="py-2 px-2 text-gray-500">{l.referenceRange}</td>
+                        <td className="py-2 px-2 text-neutral-600">{l.referenceRange}</td>
                         <td className="py-2 px-2">
-                          {l.flag !== 'normal' ? <span className="text-red-600 font-bold capitalize">{l.flag}</span> : 'Normal'}
+                          {l.flag !== 'normal' ? <span className="font-bold uppercase text-black">{l.flag}</span> : 'Normal'}
                         </td>
                       </tr>
                     ))}
@@ -423,11 +428,18 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               </section>
             )}
 
-            <footer className="mt-8 pt-4 border-t-2 border-red-100 text-xs text-gray-400">
-              <p>Generated by MediVault via 0G Network</p>
-              <p className="mt-1 break-all">0G Verification Root Hash: {meta.rootHash}</p>
+            <footer className="mt-12 pt-4 border-t border-neutral-300 text-xs text-neutral-500 flex justify-between items-start">
+              <div>
+                <p className="font-bold text-black">Generated by MediVault</p>
+                <p>Secured via 0G Decentralized Network</p>
+              </div>
+              <div className="text-right max-w-[50%]">
+                <p className="font-bold text-black">0G Verification Root Hash:</p>
+                <p className="font-mono break-all">{meta.rootHash}</p>
+              </div>
             </footer>
           </div>
+        </div>
         </div>
       )}
     </>

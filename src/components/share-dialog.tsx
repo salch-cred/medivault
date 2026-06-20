@@ -58,7 +58,11 @@ export function ShareDialog({
       if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
         const lookupRes = await fetch(`/api/og/pubkey?address=${encodeURIComponent(targetDoc)}`)
         if (!lookupRes.ok) {
-          throw new Error('This doctor address has not registered their public key yet. They need to connect their wallet to MediVault first.')
+          toast.error('Recipient has not connected to MediVault', {
+            description: 'The person you are sharing with needs to open MediVault and connect their wallet at least once to register their secure encryption key. Once they do, you can share files with them!',
+          })
+          setSharing(false)
+          return
         }
         const data = await lookupRes.json()
         resolvedPubKey = data.publicKey
