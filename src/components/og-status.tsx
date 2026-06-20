@@ -71,7 +71,7 @@ export function OgStatus() {
           },
         ],
       })
-      toast.success('0G Testnet successfully added to your wallet!')
+      toast.success('0G Mainnet successfully added to your wallet!')
     } catch (e) {
       toast.error('Failed to add 0G network to your wallet.')
     }

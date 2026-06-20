@@ -84,7 +84,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg.toLowerCase().includes('file not found')) {
-        toast.error('File no longer exists on the 0G testnet. Testnet data is frequently pruned or wiped.')
+        toast.error('File not found on the 0G network. It may have been deleted or the root hash is invalid.')
       } else {
         toast.error(msg || 'Could not load original document')
       }
