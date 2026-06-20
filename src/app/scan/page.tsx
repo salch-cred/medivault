@@ -86,12 +86,12 @@ function ScanInner() {
             peerStatusRef.current = 'approved'
             setPeerStatus('approved')
             setDecryptedText(data.payload)
-            peer.destroy()
+            // Removed peer.destroy() to avoid triggering close handler immediately
           } else if (data && data.type === 'DENIED') {
             peerStatusRef.current = 'denied'
             setPeerStatus('denied')
             setError('The owner denied your request for access.')
-            peer.destroy()
+            // Removed peer.destroy() 
           }
         })
 
