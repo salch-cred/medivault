@@ -45,6 +45,24 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error('Connect your wallet first.')
         return
       }
+
+      // Animate the progress bar forward slowly during blockchain waits
+      let tickInterval: ReturnType<typeof setInterval> | null = null
+      const startTick = (from: number, to: number, durationMs = 45000) => {
+        if (tickInterval) clearInterval(tickInterval)
+        const step = (to - from) / (durationMs / 500)
+        let current = from
+        tickInterval = setInterval(() => {
+          current = Math.min(to, current + step)
+          setPct(Math.round(current))
+        }, 500)
+      }
+      const stopTick = (finalPct: number) => {
+        if (tickInterval) clearInterval(tickInterval)
+        tickInterval = null
+        setPct(finalPct)
+      }
+
       try {
         setStage('parsing')
         setPct(10)
@@ -70,9 +88,9 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         const summary = normalizeExtraction(result)
 
         setStage('encrypting')
-        setPct(70)
-        
-        // Ensure the auto-wallet has enough testnet gas for the 0G upload.
+        setPct(65)
+
+        // Ensure the auto-wallet has enough gas for the 0G upload.
         const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
         const balance = await provider.getBalance(autoWalletAddress!)
         if (balance === 0n) {
@@ -82,12 +100,16 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         // Derive a per-record AES key so each upload uses a distinct key.
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
+
+        // Tick progress slowly from 65→85% while waiting for 0G upload (can take 30-90s on mainnet)
+        startTick(65, 85, 90000)
         const { rootHash, txHash } = await storage!.uploadEncrypted(file, recKey)
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
         const { rootHash: summaryRootHash } = await storage!.uploadEncrypted(summaryBytes, recKey)
+        stopTick(88)
 
         setStage('indexing')
-        setPct(90)
+        startTick(88, 97, 30000)
         const meta: RecordMeta = {
           id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `rec_${Date.now()}`,
           owner: address!,
@@ -101,11 +123,12 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         }
         await index!.put(meta)
         addRecord(meta, summary)
+        stopTick(100)
 
         setStage('done')
         setPct(100)
-        toast.success('Encrypted and saved to 0G', {
-          description: txHash ? `tx ${txHash.slice(0, 10)}…` : undefined,
+        toast.success('Encrypted and saved to 0G Mainnet! 🎉', {
+          description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
         })
         onUploaded?.(meta.id)
         setTimeout(() => {
@@ -113,6 +136,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           setPct(0)
         }, 1600)
       } catch (e) {
+        if (tickInterval) clearInterval(tickInterval)
         setStage('idle')
         setPct(0)
         toast.error(e instanceof Error ? e.message : 'Upload failed')
@@ -120,6 +144,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
     },
     [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, onUploaded],
   )
+
 
   return (
     <Card>
