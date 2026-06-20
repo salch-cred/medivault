@@ -234,17 +234,18 @@ export default function SwapPage() {
             <TabsContent value="crosschain" className="mt-4">
               <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl overflow-hidden">
                 <CardHeader>
-                  <CardTitle className="text-lg">Cross-Chain Swap</CardTitle>
+                  <CardTitle className="text-lg">Cross-Chain Swap (XSwap Bridge)</CardTitle>
                   <CardDescription>
-                    Swap tokens from any network directly into OG tokens using ChangeNOW. Enter your Main Wallet or Auto-Wallet address as the recipient.
+                    Bridge tokens from any network directly into OG tokens using the official XSwap bridge.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="p-0 sm:p-2 bg-muted/10">
-                  {/* ChangeNOW Iframe Widget */}
+                <CardContent className="p-0 sm:p-2 bg-muted/10 h-[600px] relative">
+                  {/* XSwap Iframe Widget */}
                   <iframe 
                     id="iframe-widget" 
-                    src={`https://changenow.io/embeds/exchange-widget/v2/widget.html?FAQ=true&amount=0.1&amountFiat=1500&backgroundColor=1E2329&darkMode=true&from=eth&fromFiat=eur&horizontal=false&isFiat&lang=en-US&link_id=07bdfa143734a7&locales=true&logo=false&primaryColor=00C26F&to=og&toFiat=eth&toTheMoon=true`} 
-                    style={{ height: '356px', width: '100%', border: 'none' }}
+                    src={`https://xswap.link/bridge?toChain=16661`} 
+                    style={{ height: '100%', width: '100%', border: 'none', borderRadius: '8px' }}
+                    allow="clipboard-read; clipboard-write"
                   ></iframe>
                 </CardContent>
               </Card>
