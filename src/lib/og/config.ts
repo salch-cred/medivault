@@ -4,13 +4,27 @@
 // These EXACT values come from the 0G Aristotle Mainnet. Do not guess — override
 // only via environment variables.
 
+function getEnvUrl(envVal: string | undefined, defaultUrl: string) {
+  // Ignore empty strings, or placeholder strings filled with dots from template copy-pastes
+  if (!envVal || envVal.trim() === '' || envVal.includes('...')) {
+    return defaultUrl
+  }
+  return envVal
+}
+
 export const ZG = {
-  RPC_URL:
-    process.env.NEXT_PUBLIC_ZG_RPC_URL ?? (typeof window !== 'undefined' ? `${window.location.origin}/api/og/rpc` : 'https://evmrpc.0g.ai'),
-  INDEXER_RPC:
-    process.env.NEXT_PUBLIC_ZG_INDEXER_RPC ?? (typeof window !== 'undefined' ? `${window.location.origin}/api/og/indexer` : 'https://indexer-storage-turbo.0g.ai'),
-  KV_NODE_URL:
-    process.env.NEXT_PUBLIC_ZG_KV_NODE_URL ?? 'https://rpc-storage-turbo.0g.ai',
+  RPC_URL: getEnvUrl(
+    process.env.NEXT_PUBLIC_ZG_RPC_URL,
+    typeof window !== 'undefined' ? `${window.location.origin}/api/og/rpc` : 'https://evmrpc.0g.ai'
+  ),
+  INDEXER_RPC: getEnvUrl(
+    process.env.NEXT_PUBLIC_ZG_INDEXER_RPC,
+    typeof window !== 'undefined' ? `${window.location.origin}/api/og/indexer` : 'https://indexer-storage-turbo.0g.ai'
+  ),
+  KV_NODE_URL: getEnvUrl(
+    process.env.NEXT_PUBLIC_ZG_KV_NODE_URL,
+    'https://rpc-storage-turbo.0g.ai'
+  ),
   FLOW_CONTRACT:
     process.env.NEXT_PUBLIC_ZG_FLOW_CONTRACT ??
     '0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526',
