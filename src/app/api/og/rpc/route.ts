@@ -4,8 +4,8 @@ export async function POST(req: Request) {
   try {
     const body = await req.text()
     
-    // Forward to 0G EVM Testnet RPC
-    const response = await fetch('https://evmrpc-testnet.0g.ai', {
+    // Forward to 0G EVM Mainnet RPC
+    const response = await fetch('https://evmrpc.0g.ai', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
