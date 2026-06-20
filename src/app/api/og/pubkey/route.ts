@@ -91,7 +91,6 @@ export async function GET(req: Request) {
           if (bytes) {
             pubKey = new TextDecoder().decode(bytes)
             if (pubKey && pubKey.startsWith('0x')) {
-              // Cache it locally so subsequent calls don't query 0G KV
               keys[address] = pubKey
               writeKeys(keys)
             }
@@ -99,6 +98,58 @@ export async function GET(req: Request) {
         }
       } catch (kvErr) {
         console.warn('Failed to fetch public key from 0G KV node:', kvErr)
+      }
+    }
+
+    // On-chain recovery: look up the most recent transaction from the address and
+    // recover the ECDSA public key from its signature. Works on any EVM chain
+    // without any pre-registration step.
+    if (!pubKey) {
+      try {
+        const rpcUrls = [
+          'https://evmrpc.0g.ai',
+          'https://evmrpc-testnet.0g.ai',
+        ]
+        for (const rpc of rpcUrls) {
+          try {
+            const provider = new ethers.JsonRpcProvider(rpc)
+            // Get the transaction count to find their latest tx
+            const txCount = await provider.getTransactionCount(address)
+            if (txCount === 0) continue
+
+            // eth_getTransactionByBlockNumberAndIndex is unreliable — use debug trace
+            // Instead fetch latest block and scan for sender
+            const latestBlock = await provider.getBlockNumber()
+            // scan last 200 blocks for a tx from this address
+            let recovered: string | null = null
+            for (let blockNum = latestBlock; blockNum > Math.max(0, latestBlock - 200) && !recovered; blockNum--) {
+              const block = await provider.getBlock(blockNum, true)
+              if (!block || !block.prefetchedTransactions) continue
+              for (const tx of block.prefetchedTransactions) {
+                if (tx.from?.toLowerCase() !== address) continue
+                if (!tx.signature) continue
+                try {
+                  const digest = ethers.keccak256(
+                    ethers.Transaction.from(tx).unsignedSerialized
+                  )
+                  recovered = ethers.SigningKey.recoverPublicKey(digest, tx.signature)
+                  if (recovered) break
+                } catch {}
+              }
+            }
+
+            if (recovered) {
+              pubKey = recovered
+              keys[address] = pubKey
+              writeKeys(keys)
+              break
+            }
+          } catch (rpcErr) {
+            console.warn(`On-chain recovery failed for ${rpc}:`, rpcErr)
+          }
+        }
+      } catch (chainErr) {
+        console.warn('On-chain public key recovery failed:', chainErr)
       }
     }
 
@@ -111,6 +162,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
+
 
 export async function POST(req: Request) {
   try {
