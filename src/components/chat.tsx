@@ -66,7 +66,7 @@ export function Chat() {
           'Content-Type': 'application/json',
           ...(auth ? { 'x-medivault-auth': auth } : {}),
         },
-        body: JSON.stringify({ question, records: context, language, eli5 }),
+        body: JSON.stringify({ question, records: context, language, eli5, history: messages }),
       })
       if (!res.ok) {
         const { error } = await res.json().catch(() => ({ error: 'Chat failed' }))

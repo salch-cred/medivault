@@ -23,11 +23,12 @@ export async function POST(req: NextRequest) {
     const auth = verifyAuth(req)
     if (!auth.ok) return auth.response
 
-    const { question, records, language, eli5 } = (await req.json()) as {
+    const { question, records, language, eli5, history } = (await req.json()) as {
       question?: string
       records?: RecordContext[]
       language?: string
       eli5?: boolean
+      history?: { role: 'user' | 'assistant'; content: string }[]
     }
     const safeQuestion = clamp(question, LIMITS.MAX_QUESTION)
     if (!safeQuestion.trim()) {
@@ -55,6 +56,29 @@ export async function POST(req: NextRequest) {
     const baseUrl = process.env.AI_BASE_URL || 'https://api.mistral.ai/v1'
     const model = process.env.AI_MODEL || 'open-mistral-nemo'
 
+    // Build multi-turn conversation messages
+    const conversationMessages: { role: string; content: string }[] = [
+      {
+        role: 'system',
+        content: CHAT_SYSTEM_PROMPT + languageInstruction(language, true) + eli5Instruction(eli5) +
+          `\n\nHere are the user's stored records:\n\n${context || '(no records yet)'}`,
+      },
+    ]
+
+    // Add conversation history (last 10 turns to keep token usage bounded)
+    const safeHistory = (history ?? []).slice(-10)
+    for (const msg of safeHistory) {
+      conversationMessages.push({
+        role: msg.role,
+        content: clamp(msg.content, 2000),
+      })
+    }
+
+    // Add the current question
+    conversationMessages.push({
+      role: 'user',
+      content: safeQuestion,
+    })
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -65,19 +89,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        messages: [
-          {
-            role: 'system',
-            content: CHAT_SYSTEM_PROMPT + languageInstruction(language, true) + eli5Instruction(eli5),
-          },
-          {
-            role: 'user',
-            content:
-              `Here are the user's stored records:\n\n${context || '(no records yet)'}\n\n` +
-              `Question: ${safeQuestion}\n\n` +
-              'Answer ONLY from these records and cite each supporting record by its title.',
-          },
-        ],
+        messages: conversationMessages,
         tools: [
           {
             type: "function",
