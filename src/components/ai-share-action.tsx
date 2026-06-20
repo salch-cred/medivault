@@ -53,8 +53,8 @@ export function AIChatShareAction({
       
       ethers.SigningKey.computePublicKey(resolvedPubKey, true)
       
-      await loadSummary(record)
-      const summary = useVault.getState().summaries[record.id]
+      await loadSummary(record!)
+      const summary = useVault.getState().summaries[record!.id]
 
       const sharedAt = new Date().toISOString()
       
