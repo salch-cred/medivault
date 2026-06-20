@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
 import fs from 'fs'
 import path from 'path'
 import { KvClient } from '@0gfoundation/0g-storage-ts-sdk'

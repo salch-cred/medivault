@@ -48,7 +48,31 @@ export default function SharedRecordPage() {
           throw new Error('Auto-Wallet private key not loaded')
         }
 
-        const bytes = await storage.downloadDecryptedShared(hash, privateKey)
+        let bytes: Uint8Array | null = null
+        let retries = 5
+        let lastErr: any = null
+        
+        while (retries > 0) {
+          try {
+            bytes = await storage.downloadDecryptedShared(hash, privateKey)
+            break
+          } catch (e: any) {
+            lastErr = e
+            const msg = e.message?.toLowerCase() || ''
+            if (msg.includes('file not found') || msg.includes('no locations found')) {
+              retries--
+              if (retries > 0) {
+                // Wait 2 seconds before retrying to allow 0G network propagation
+                await new Promise(r => setTimeout(r, 2000))
+                continue
+              }
+            }
+            throw e // re-throw if different error or out of retries
+          }
+        }
+        
+        if (!bytes) throw lastErr
+
         const payload = JSON.parse(new TextDecoder().decode(bytes))
         setDecryptedData(payload)
       } catch (err: any) {
