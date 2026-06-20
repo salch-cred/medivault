@@ -6,13 +6,11 @@
 
 export const ZG = {
   RPC_URL:
-    process.env.NEXT_PUBLIC_ZG_RPC_URL ?? 'https://evmrpc-testnet.0g.ai',
+    process.env.NEXT_PUBLIC_ZG_RPC_URL ?? (typeof window !== 'undefined' ? `${window.location.origin}/api/og/rpc` : 'https://evmrpc-testnet.0g.ai'),
   INDEXER_RPC:
-    process.env.NEXT_PUBLIC_ZG_INDEXER_RPC ??
-    'https://indexer-storage-testnet-turbo.0g.ai',
+    process.env.NEXT_PUBLIC_ZG_INDEXER_RPC ?? (typeof window !== 'undefined' ? `${window.location.origin}/api/og/indexer` : 'https://indexer-storage-testnet-turbo.0g.ai'),
   KV_NODE_URL:
-    process.env.NEXT_PUBLIC_ZG_KV_NODE_URL ??
-    'https://rpc-storage-testnet-turbo.0g.ai',
+    process.env.NEXT_PUBLIC_ZG_KV_NODE_URL ?? 'https://rpc-storage-testnet-turbo.0g.ai',
   FLOW_CONTRACT:
     process.env.NEXT_PUBLIC_ZG_FLOW_CONTRACT ??
     '0x22E03a6A89B950F1c82ec5e74F8eCa321a105296',
