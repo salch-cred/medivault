@@ -122,7 +122,7 @@ export function OgStatus() {
               </div>
             </div>
             <div className="flex items-center justify-between mt-1">
-              <span className="text-xs text-emerald-600/80 dark:text-emerald-400/80">Gas Balance</span>
+              <span className="text-xs text-emerald-600/80 dark:text-emerald-400/80">Mainnet Balance</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-400">
                   {balance !== null ? balance : '...'}
