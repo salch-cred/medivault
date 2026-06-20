@@ -11,8 +11,8 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 
 const ITEMS = [
-  { icon: Link2, label: 'Chain', value: `0G Galileo · ${ZG.CHAIN_ID}` },
-  { icon: HardDrive, label: 'Storage indexer', value: 'turbo testnet' },
+  { icon: Link2, label: 'Chain', value: `${ZG.CHAIN_NAME} · ${ZG.CHAIN_ID}` },
+  { icon: HardDrive, label: 'Storage indexer', value: 'mainnet' },
   { icon: Database, label: 'KV index', value: 'decentralized · no central DB' },
   { icon: Cpu, label: 'AI compute', value: '0G Compute router' },
 ]
@@ -140,13 +140,15 @@ export function OgStatus() {
             </div>
           </div>
         )}
-        <Button onClick={handleFaucet} variant="secondary" className="w-full text-xs font-medium" size="sm">
-          <Droplets className="mr-2 h-3.5 w-3.5" />
-          Fund Auto-Wallet (Faucet)
-        </Button>
+        <Link href="/vault/swap" className="w-full">
+          <Button variant="secondary" className="w-full text-xs font-medium" size="sm">
+            <Zap className="mr-2 h-3.5 w-3.5" />
+            Transfer Funds (Swap)
+          </Button>
+        </Link>
         <Button onClick={handleAddNetwork} variant="secondary" className="w-full text-xs font-medium" size="sm">
           <Wallet className="mr-2 h-3.5 w-3.5" />
-          Add 0G Testnet to Wallet
+          Add 0G Mainnet to Wallet
         </Button>
       </CardFooter>
     </Card>
