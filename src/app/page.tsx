@@ -336,14 +336,15 @@ export default function LandingPage() {
               </a>
             </div>
           </div>
-          <a
-            href="https://uncut.wtf"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
-          >
-            <Database className="h-3.5 w-3.5" /> Type by uncut.wtf
-          </a>
+          <div className="flex items-center gap-3">
+            <a href="https://x.com/sahilvishnaliya?s=21" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground">
+              <Twitter className="h-3.5 w-3.5" /> Sahil
+            </a>
+            <span className="h-3.5 w-px bg-border/40" />
+            <a href="https://x.com/salmanch_?s=11" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground">
+              <Twitter className="h-3.5 w-3.5" /> Sal
+            </a>
+          </div>
         </div>
       </footer>
     </div>
