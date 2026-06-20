@@ -93,7 +93,7 @@ export default function SwapPage() {
 
   return (
     <ConnectGate>
-      <div className="mx-auto max-w-xl space-y-6 pt-4 pb-12">
+      <div className="mx-auto max-w-lg space-y-4 pt-2 pb-12">
         <Link href="/vault" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Back to Dashboard
         </Link>
@@ -101,23 +101,23 @@ export default function SwapPage() {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
+          className="space-y-4"
         >
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Fund Auto-Wallet</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <h1 className="text-2xl font-bold tracking-tight">Fund Auto-Wallet</h1>
+            <p className="mt-1 text-xs text-muted-foreground">
               Transfer OG tokens internally or swap from other networks to pay for decentralized storage.
             </p>
           </div>
 
           <Tabs defaultValue="internal" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="internal">
-                <Wallet className="w-4 h-4 mr-2" />
+            <TabsList className="grid w-full grid-cols-2 h-10">
+              <TabsTrigger value="internal" className="text-xs">
+                <Wallet className="w-3 h-3 mr-2" />
                 Internal Transfer
               </TabsTrigger>
-              <TabsTrigger value="crosschain">
-                <Globe className="w-4 h-4 mr-2" />
+              <TabsTrigger value="crosschain" className="text-xs">
+                <Globe className="w-3 h-3 mr-2" />
                 Cross-Chain Swap
               </TabsTrigger>
             </TabsList>
@@ -125,22 +125,22 @@ export default function SwapPage() {
             {/* INTERNAL TRANSFER TAB */}
             <TabsContent value="internal" className="mt-4 space-y-4">
               <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl">
-                <CardContent className="p-6 space-y-6">
+                <CardContent className="p-4 space-y-4">
                   {/* Main Wallet (From) */}
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium text-muted-foreground">From</Label>
-                      <span className="text-xs text-muted-foreground">Main Wallet</span>
+                      <Label className="text-xs font-medium text-muted-foreground">From</Label>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Main Wallet</span>
                     </div>
-                    <div className="rounded-xl border bg-muted/30 p-4">
+                    <div className="rounded-xl border bg-muted/30 p-3 transition-colors hover:bg-muted/50">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                            <Wallet className="h-5 w-5" />
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <Wallet className="h-4 w-4" />
                           </div>
                           <div>
-                            <p className="font-mono text-sm">{mainWalletAddress ? `${mainWalletAddress.slice(0, 6)}...${mainWalletAddress.slice(-4)}` : 'Not connected'}</p>
-                            <p className="text-xs text-muted-foreground">Balance: {Number(mainBalance).toFixed(4)} OG</p>
+                            <p className="font-mono text-xs font-medium text-foreground">{mainWalletAddress ? `${mainWalletAddress.slice(0, 6)}...${mainWalletAddress.slice(-4)}` : 'Not connected'}</p>
+                            <p className="text-[11px] text-muted-foreground">Balance: {Number(mainBalance).toFixed(4)} OG</p>
                           </div>
                         </div>
                       </div>
@@ -148,30 +148,30 @@ export default function SwapPage() {
                   </div>
 
                   {/* Arrow Indicator */}
-                  <div className="relative flex justify-center py-2">
-                    <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border"></div>
-                    <div className="relative flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm">
-                      <ArrowDown className="h-4 w-4" />
+                  <div className="relative flex justify-center py-1">
+                    <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border/50"></div>
+                    <div className="relative flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm">
+                      <ArrowDown className="h-3 w-3" />
                     </div>
                   </div>
 
                   {/* Auto Wallet (To) */}
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium text-muted-foreground">To</Label>
-                      <span className="text-xs text-muted-foreground">Auto-Wallet</span>
+                      <Label className="text-xs font-medium text-muted-foreground">To</Label>
+                      <span className="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-semibold">Auto-Wallet</span>
                     </div>
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 transition-colors hover:bg-emerald-500/10">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
-                            <Zap className="h-5 w-5" />
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
+                            <Zap className="h-4 w-4" />
                           </div>
                           <div>
-                            <p className="font-mono text-sm text-emerald-600 dark:text-emerald-400">
+                            <p className="font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
                               {autoWalletAddress ? `${autoWalletAddress.slice(0, 6)}...${autoWalletAddress.slice(-4)}` : 'Generating...'}
                             </p>
-                            <p className="text-xs text-muted-foreground">Balance: {Number(autoBalance).toFixed(4)} OG</p>
+                            <p className="text-[11px] text-muted-foreground">Balance: {Number(autoBalance).toFixed(4)} OG</p>
                           </div>
                         </div>
                       </div>
@@ -179,12 +179,12 @@ export default function SwapPage() {
                   </div>
 
                   {/* Amount Input */}
-                  <div className="space-y-3 pt-4">
+                  <div className="space-y-2 pt-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Amount to transfer</Label>
+                      <Label className="text-xs font-medium">Amount</Label>
                       <button 
                         onClick={() => setAmount(Number(mainBalance) > 0.01 ? (Number(mainBalance) - 0.01).toString() : '0')}
-                        className="text-xs text-primary hover:underline"
+                        className="text-[10px] uppercase tracking-wider font-semibold text-primary hover:underline"
                       >
                         Max (save gas)
                       </button>
@@ -195,10 +195,10 @@ export default function SwapPage() {
                         placeholder="0.00"
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
-                        className="h-14 text-lg font-mono placeholder:text-muted-foreground/50 pr-16"
+                        className="h-10 text-sm font-mono placeholder:text-muted-foreground/50 pr-12 bg-background/50 border-border/50 focus:border-primary/50 transition-colors"
                       />
-                      <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-                        <span className="text-sm font-semibold text-muted-foreground">OG</span>
+                      <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                        <span className="text-xs font-semibold text-muted-foreground">OG</span>
                       </div>
                     </div>
                   </div>
@@ -207,12 +207,11 @@ export default function SwapPage() {
                   <Button 
                     onClick={handleTransfer} 
                     disabled={isTransferring || !amount || Number(amount) <= 0}
-                    className="w-full h-12 text-base font-semibold shadow-lg"
-                    size="lg"
+                    className="w-full h-10 text-sm font-medium shadow-sm"
                   >
                     {isTransferring ? (
                       <>
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Processing...
                       </>
                     ) : (
@@ -222,9 +221,9 @@ export default function SwapPage() {
                 </CardContent>
               </Card>
 
-              <div className="rounded-xl border bg-muted/50 p-4 flex gap-3 text-sm text-muted-foreground">
-                <Info className="h-5 w-5 shrink-0 text-primary" />
-                <p>
+              <div className="rounded-xl border border-primary/10 bg-primary/5 p-3 flex gap-2 text-xs text-muted-foreground">
+                <Info className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                <p className="leading-relaxed">
                   Your Auto-Wallet uses a small amount of OG tokens (gas) to instantly encrypt and store your files on the 0G Network securely. You own both wallets.
                 </p>
               </div>
@@ -233,22 +232,19 @@ export default function SwapPage() {
             {/* CROSS CHAIN SWAP TAB */}
             <TabsContent value="crosschain" className="mt-4 space-y-4">
               {/* Important Instruction Notice */}
-              <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 flex gap-3 text-sm text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-5 w-5 shrink-0" />
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex gap-2 text-xs text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <p className="font-semibold">Important search instruction</p>
-                  <p>When searching for the network in XSwap, you must type <strong>0G</strong> (with the number ZERO), not the letter O. Search for <strong>"0G"</strong> or scroll down the list to find it.</p>
+                  <p className="font-semibold text-[11px] uppercase tracking-wider">Search instruction</p>
+                  <p className="leading-relaxed">When searching for the network in XSwap, type <strong>0G</strong> (with the number ZERO), not the letter O.</p>
                 </div>
               </div>
 
               <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-lg">Cross-Chain Swap (XSwap)</CardTitle>
-                  <CardDescription>
-                    Bridge tokens from any network directly into OG tokens using the official 0G XSwap bridge.
-                  </CardDescription>
+                <CardHeader className="p-4 pb-0">
+                  <CardTitle className="text-sm">Cross-Chain Swap (XSwap)</CardTitle>
                 </CardHeader>
-                <CardContent className="p-0 sm:p-2 bg-muted/10 h-[600px] relative">
+                <CardContent className="p-0 sm:p-2 bg-muted/10 h-[550px] relative">
                   {/* XSwap Iframe Widget */}
                   <iframe 
                     id="iframe-widget" 
@@ -260,17 +256,16 @@ export default function SwapPage() {
               </Card>
               
               {/* Copy Auto-Wallet Shortcut */}
-              <div className="mt-4 rounded-xl border bg-muted/50 p-4 flex flex-col gap-2 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Info className="h-5 w-5 text-primary" />
-                  <p className="font-medium">Destination Address (Your Auto-Wallet)</p>
-                </div>
-                <div className="flex items-center justify-between bg-background p-2 rounded-lg border mt-1">
-                  <span className="font-mono text-xs">{autoWalletAddress || 'Generating...'}</span>
+              <div className="rounded-xl border bg-muted/30 p-3 flex flex-col gap-2 text-xs text-muted-foreground transition-colors hover:bg-muted/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-4 w-4 text-primary" />
+                    <p className="font-medium">Destination (Auto-Wallet)</p>
+                  </div>
                   <Button 
-                    variant="ghost" 
+                    variant="secondary" 
                     size="sm" 
-                    className="h-7 text-xs" 
+                    className="h-6 text-[10px] px-2" 
                     onClick={() => {
                       if(autoWalletAddress) {
                         navigator.clipboard.writeText(autoWalletAddress)
@@ -280,6 +275,9 @@ export default function SwapPage() {
                   >
                     Copy
                   </Button>
+                </div>
+                <div className="bg-background/80 p-2 rounded-md border border-border/50">
+                  <span className="font-mono text-[11px] text-foreground">{autoWalletAddress || 'Generating...'}</span>
                 </div>
               </div>
             </TabsContent>
