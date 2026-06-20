@@ -326,10 +326,11 @@ function RecordView({ meta }: { meta: RecordMeta }) {
           </p>
         )}
 
-        <Disclaimer />
+      <Disclaimer />
       </div>
 
-             <div className="hidden print:block print:bg-white print:text-black">
+      {summary && (
+        <div className="hidden print:block print:bg-white print:text-black">
           {/* Header section with a clean, classic medical look */}
           <div className="mb-8 border-b-4 border-neutral-900 pb-6" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
             <div className="flex justify-between items-end">
@@ -353,7 +354,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               </p>
             </section>
 
-            {summary.redFlags.length > 0 && (
+            {summary.redFlags && summary.redFlags.length > 0 && (
               <section>
                 <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Important Alerts</h3>
                 <div className="space-y-3">
@@ -373,7 +374,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 <div>
                   <h4 className="font-bold text-black mb-2 text-base">Conditions & Diagnoses</h4>
                   <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
-                    {summary.conditions.length ? summary.conditions.map((c, i) => (
+                    {summary.conditions && summary.conditions.length ? summary.conditions.map((c, i) => (
                       <li key={i}>{c.name} {c.status && `(${c.status})`}</li>
                     )) : <li>None Recorded</li>}
                   </ul>
@@ -381,7 +382,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 <div>
                   <h4 className="font-bold text-black mb-2 text-base">Active Medications</h4>
                   <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
-                    {summary.medications.length ? summary.medications.map((m, i) => (
+                    {summary.medications && summary.medications.length ? summary.medications.map((m, i) => (
                       <li key={i}>{m.name} {m.dose && `- ${m.dose}`}</li>
                     )) : <li>None Recorded</li>}
                   </ul>
@@ -400,7 +401,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               </section>
             )}
 
-            {summary.labResults.length > 0 && (
+            {summary.labResults && summary.labResults.length > 0 && (
               <section>
                 <h3 className="mb-3 border-b-2 border-neutral-200 pb-1 text-lg font-bold text-black uppercase tracking-wider">Lab Results</h3>
                 <table className="w-full border-collapse text-left text-base text-black">
@@ -439,7 +440,6 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               </div>
             </footer>
           </div>
-        </div>
         </div>
       )}
     </>

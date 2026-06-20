@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowDown, Wallet, Zap, Loader2, Info } from 'lucide-react'
 import Link from 'next/link'
 import { ethers } from 'ethers'
-import { useWeb3Provider, useWeb3ModalAccount } from '@web3modal/ethers/react'
+import { useWeb3ModalProvider, useWeb3ModalAccount } from '@web3modal/ethers/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +17,7 @@ import { ZG } from '@/lib/og/config'
 export default function SwapPage() {
   const { autoWalletAddress } = useVault()
   const { address: mainWalletAddress, isConnected } = useWeb3ModalAccount()
-  const { walletProvider } = useWeb3Provider()
+  const { walletProvider } = useWeb3ModalProvider()
   
   const [amount, setAmount] = useState('')
   const [isTransferring, setIsTransferring] = useState(false)

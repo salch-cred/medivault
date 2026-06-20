@@ -34,10 +34,8 @@ createWeb3Modal({
   chains: [galileo],
   projectId,
   enableAnalytics: false,
-  features: {
-    swaps: false,
-    onramp: false
-  },
+  enableSwaps: false,
+  enableOnramp: false,
   themeMode: 'dark',
   themeVariables: {
     '--w3m-color-mix': '#000000',
