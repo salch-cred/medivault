@@ -127,7 +127,7 @@ export default function VaultDashboard() {
 
               <motion.div variants={itemVariants} className="space-y-4 pt-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold tracking-tight md:text-xl">Shared with You (Clinician View)</h2>
+                  <h2 className="text-lg font-bold tracking-tight md:text-xl">Shared with You</h2>
                   <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">ECIES Decrypted</Badge>
                 </div>
                 <div className="rounded-3xl border border-border/50 bg-background/60 p-1 shadow-lg backdrop-blur-xl">

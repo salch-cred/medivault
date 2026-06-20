@@ -116,14 +116,14 @@ export function ShareDialog({
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="outline">
-          <Share2 className="h-4 w-4" /> Share to doctor
+          <Share2 className="h-4 w-4" /> Share record
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Share securely with a doctor</DialogTitle>
+          <DialogTitle>Share securely with family, friends, or doctors</DialogTitle>
           <DialogDescription>
-            Re-encrypts this record securely to the doctor’s key and posts it directly to their dashboard.
+            Re-encrypts this record securely to the recipient’s key and posts it directly to their dashboard.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -137,15 +137,15 @@ export function ShareDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="doctorAddress">Doctor’s Wallet Address</Label>
+            <Label htmlFor="doctorAddress">Recipient’s Wallet Address</Label>
             <Input
               id="doctorAddress"
-              placeholder="0x… (EVM wallet address of the doctor)"
+              placeholder="0x… (EVM wallet address of family, friend, or doctor)"
               value={doctorInput}
               onChange={(e) => setDoctorInput(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Enter the doctor's wallet address. They must have connected to MediVault at least once.
+              Enter the recipient's wallet address. They must have connected to MediVault at least once.
             </p>
           </div>
         </div>

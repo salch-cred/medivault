@@ -23,7 +23,7 @@ export function ReceivedRecords() {
         <FileSpreadsheet className="h-7 w-7 text-muted-foreground" />
         <p className="mt-2 text-sm font-medium">No shared documents received yet</p>
         <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-          When patients share their E2E encrypted medical files with your wallet address, they will appear here.
+          When family, friends, or doctors share their E2E encrypted medical files with your wallet address, they will appear here.
         </p>
       </div>
     )
