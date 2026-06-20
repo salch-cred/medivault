@@ -26,7 +26,7 @@ const metadata: Metadata = {
 // viewport-fit=cover lets content extend under the notch so we can pad with
 // safe-area insets; themeColor tints the iOS status bar / Android address bar.
 export const viewport: Viewport = {
-  themeColor: '#ffffff',
+  themeColor: '#000000',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -35,7 +35,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${instrumentSerif.variable}`}>
+    <html lang="en" className={`${inter.variable} ${instrumentSerif.variable} dark`}>
       <body className="font-sans">
         <Providers>{children}</Providers>
       </body>

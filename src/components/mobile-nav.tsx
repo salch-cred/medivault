@@ -41,7 +41,7 @@ export function MobileNav() {
       className="fixed inset-x-0 bottom-0 z-50 md:hidden print:hidden"
     >
       {/* Frosted background with a top hairline + safe-area bottom fill. */}
-      <div className="border-t border-border/60 bg-background/80 backdrop-blur-xl pb-safe">
+      <div className="border-t border-neutral-900 bg-black/95 backdrop-blur-xl pb-safe">
         <div className="mx-auto flex max-w-md items-stretch justify-around px-2">
           {MOBILE_NAV.map((item) => {
             // Exact match for /vault; startsWith for nested sub-routes.
@@ -54,20 +54,20 @@ export function MobileNav() {
                 key={item.href}
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
-                className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center pt-2 pb-1.5"
+                className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center pt-2 pb-1.5 transition-transform active:scale-95"
               >
                 {/* Active dot below the icon */}
                 {isActive && (
                   <motion.span
                     layoutId="mobile-tab-dot"
-                    className="absolute bottom-1 h-1 w-1 rounded-full bg-foreground"
+                    className="absolute bottom-1 h-1.5 w-1.5 rounded-full bg-white animate-pulse"
                     transition={springSnappy}
                   />
                 )}
                 <Icon
                   className={cn(
-                    'relative z-10 h-6 w-6 transition-colors',
-                    isActive ? 'text-foreground' : 'text-muted-foreground',
+                    'relative z-10 h-6 w-6 transition-colors duration-200',
+                    isActive ? 'text-white scale-105' : 'text-neutral-500 hover:text-white',
                   )}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
