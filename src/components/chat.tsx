@@ -9,8 +9,14 @@ import { OptionsBar } from '@/components/options-bar'
 import { useVault } from '@/lib/store'
 import { buildAuthHeader } from '@/lib/client/auth'
 import { cn } from '@/lib/utils'
+import { AIChatShareAction } from '@/components/ai-share-action'
+import { AIChatFundAction } from '@/components/ai-fund-action'
 
-type Message = { role: 'user' | 'assistant'; content: string }
+type Message = { 
+  role: 'user' | 'assistant'
+  content: string
+  toolCall?: { name: string; args: any }
+}
 
 export function Chat() {
   const { records, summaries, loadSummary, language, eli5, autoWalletSigner, autoWalletAddress } = useVault()
@@ -66,8 +72,28 @@ export function Chat() {
         const { error } = await res.json().catch(() => ({ error: 'Chat failed' }))
         throw new Error(error)
       }
-      const { answer } = (await res.json()) as { answer: string }
-      setMessages((m) => [...m, { role: 'assistant', content: answer }])
+      const data = await res.json()
+      
+      if (data.toolCalls && data.toolCalls.length > 0) {
+        const call = data.toolCalls[0]
+        const toolName = call.function.name
+        const toolArgs = JSON.parse(call.function.arguments)
+        
+        let assistantMessage = ''
+        if (toolName === 'share_record') {
+          assistantMessage = 'I can help with that! Please confirm the details below to securely share the record using your Auto-Wallet:'
+        } else if (toolName === 'fund_wallet') {
+          assistantMessage = `Got it! I\'ll transfer ${toolArgs.amount === 'max' ? 'the maximum available' : toolArgs.amount + ' OG'} from your Main Wallet to your Auto-Wallet. Please confirm below:`
+        }
+        
+        setMessages((m) => [...m, { 
+          role: 'assistant', 
+          content: assistantMessage, 
+          toolCall: { name: toolName, args: toolArgs } 
+        }])
+      } else {
+        setMessages((m) => [...m, { role: 'assistant', content: data.answer }])
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Chat failed')
       setMessages((m) => [
@@ -107,13 +133,25 @@ export function Chat() {
                     {m.content}
                   </div>
                 ) : (
-                  <div className="flex w-full gap-4 max-w-[90%]">
-                    <div className="flex-shrink-0 mt-1 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-sm border border-primary/20">
-                      <Sparkles className="h-4 w-4" />
+                  <div className="flex w-full flex-col gap-4 max-w-[90%]">
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0 mt-1 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-sm border border-primary/20">
+                        <Sparkles className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 whitespace-pre-wrap pt-1.5 text-base leading-relaxed text-foreground/90">
+                        {m.content}
+                      </div>
                     </div>
-                    <div className="flex-1 whitespace-pre-wrap pt-1.5 text-base leading-relaxed text-foreground/90">
-                      {m.content}
-                    </div>
+                    {m.toolCall && m.toolCall.name === 'share_record' && (
+                      <div className="pl-12 w-full">
+                        <AIChatShareAction args={m.toolCall.args} />
+                      </div>
+                    )}
+                    {m.toolCall && m.toolCall.name === 'fund_wallet' && (
+                      <div className="pl-12 w-full">
+                        <AIChatFundAction args={m.toolCall.args} />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
