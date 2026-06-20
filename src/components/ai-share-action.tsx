@@ -59,9 +59,9 @@ export function AIChatShareAction({
       const sharedAt = new Date().toISOString()
       
       const payload = {
-        title: record.title,
-        docType: record.docType,
-        date: record.date,
+        title: record!.title,
+        docType: record!.docType,
+        date: record!.date,
         sharedAt,
         senderName: name,
         senderAddress,
@@ -77,9 +77,9 @@ export function AIChatShareAction({
           recipientAddress: targetDoc,
           senderName: name,
           senderAddress,
-          title: record.title,
-          docType: record.docType,
-          date: record.date,
+          title: record!.title,
+          docType: record!.docType,
+          date: record!.date,
           sharedAt,
           rootHash,
         })
