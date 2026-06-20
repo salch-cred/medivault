@@ -49,59 +49,28 @@ export function MobileNav() {
               pathname === item.href ||
               (item.href !== '/vault' && pathname.startsWith(item.href))
             const Icon = item.icon
-            const isEmergency = item.href === '/vault/emergency'
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
-                className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 pt-2 pb-1.5 text-[10px] font-medium"
+                className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center pt-2 pb-1.5"
               >
-                {/* Active pill (animates between tabs via layoutId). */}
-                {isActive && (
-                  <motion.div
-                    layoutId="mobile-tab-pill"
-                    className={cn(
-                      'absolute top-1 h-9 w-14 rounded-full',
-                      isEmergency ? 'bg-red-500/10' : 'bg-primary/10',
-                    )}
-                    transition={springSnappy}
-                  />
-                )}
-                {/* Active dot above the icon (Mobbin-style cue). */}
+                {/* Active dot below the icon */}
                 {isActive && (
                   <motion.span
                     layoutId="mobile-tab-dot"
-                    className={cn(
-                      'absolute top-0 h-1 w-1 rounded-full',
-                      isEmergency ? 'bg-red-500' : 'bg-primary',
-                    )}
+                    className="absolute bottom-1 h-1 w-1 rounded-full bg-foreground"
                     transition={springSnappy}
                   />
                 )}
                 <Icon
                   className={cn(
-                    'relative z-10 h-[22px] w-[22px] transition-colors',
-                    isActive
-                      ? isEmergency
-                        ? 'text-red-500'
-                        : 'text-primary'
-                      : 'text-muted-foreground',
+                    'relative z-10 h-6 w-6 transition-colors',
+                    isActive ? 'text-foreground' : 'text-muted-foreground',
                   )}
-                  strokeWidth={isActive ? 2.4 : 2}
+                  strokeWidth={isActive ? 2.5 : 2}
                 />
-                <span
-                  className={cn(
-                    'relative z-10 transition-colors',
-                    isActive
-                      ? isEmergency
-                        ? 'text-red-500'
-                        : 'text-primary'
-                      : 'text-muted-foreground',
-                  )}
-                >
-                  {item.label}
-                </span>
               </Link>
             )
           })}

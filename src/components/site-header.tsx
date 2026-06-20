@@ -20,7 +20,7 @@ const NAV = [
 export function SiteHeader() {
   const pathname = usePathname()
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/90 backdrop-blur-xl transition-all shadow-sm pt-safe">
+    <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/90 backdrop-blur-xl transition-all shadow-sm pt-safe md:hidden">
       <div className="container flex h-14 items-center justify-between gap-3 md:h-16">
         <Link href="/" className="flex items-center gap-2 font-bold group">
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-md transition-transform group-active:scale-95 md:h-9 md:w-9">
