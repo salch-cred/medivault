@@ -2,25 +2,43 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-const PUBKEYS_FILE = path.join(process.cwd(), 'scratch', 'public_keys.json')
+// Determine writable directory based on environment (Vercel has a writable /tmp)
+const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
+const WritableDir = isVercel ? '/tmp' : path.join(process.cwd(), 'scratch')
+const PUBKEYS_FILE = path.join(WritableDir, 'public_keys.json')
 
-function readKeys() {
+// Global in-memory cache to ensure registry data is preserved across container runs
+const globalForKeys = global as unknown as {
+  pubkeysMemory: Record<string, string>
+}
+if (!globalForKeys.pubkeysMemory) {
+  globalForKeys.pubkeysMemory = {}
+}
+
+function readKeys(): Record<string, string> {
   try {
-    if (!fs.existsSync(PUBKEYS_FILE)) {
-      fs.mkdirSync(path.dirname(PUBKEYS_FILE), { recursive: true })
-      fs.writeFileSync(PUBKEYS_FILE, JSON.stringify({}))
-      return {}
+    // Merge memory cache with file system cache
+    let fileKeys: Record<string, string> = {}
+    if (fs.existsSync(PUBKEYS_FILE)) {
+      const data = fs.readFileSync(PUBKEYS_FILE, 'utf8')
+      fileKeys = JSON.parse(data)
     }
-    const data = fs.readFileSync(PUBKEYS_FILE, 'utf8')
-    return JSON.parse(data)
+    // Update global cache with file contents and vice versa
+    globalForKeys.pubkeysMemory = {
+      ...fileKeys,
+      ...globalForKeys.pubkeysMemory
+    }
+    return globalForKeys.pubkeysMemory
   } catch (e) {
     console.error('Error reading pubkeys registry:', e)
-    return {}
+    return globalForKeys.pubkeysMemory || {}
   }
 }
 
-function writeKeys(data: any) {
+function writeKeys(data: Record<string, string>) {
   try {
+    globalForKeys.pubkeysMemory = data
+    // Write to writable dir, wrap in try-catch so it never crashes the handler if it fails
     fs.mkdirSync(path.dirname(PUBKEYS_FILE), { recursive: true })
     fs.writeFileSync(PUBKEYS_FILE, JSON.stringify(data, null, 2))
   } catch (e) {

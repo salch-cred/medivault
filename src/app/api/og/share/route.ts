@@ -2,29 +2,47 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-// Path to store shared metadata registry in the workspace
-const REGISTRY_FILE = path.join(process.cwd(), 'scratch', 'shared_records.json')
+// Determine writable directory based on environment (Vercel has a writable /tmp)
+const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
+const WritableDir = isVercel ? '/tmp' : path.join(process.cwd(), 'scratch')
+const REGISTRY_FILE = path.join(WritableDir, 'shared_records.json')
+
+// Global in-memory cache to ensure registry data is preserved across container runs
+const globalForShares = global as unknown as {
+  sharesMemory: any[]
+}
+if (!globalForShares.sharesMemory) {
+  globalForShares.sharesMemory = []
+}
 
 // Helper to read the registry
-function readRegistry() {
+function readRegistry(): any[] {
   try {
-    if (!fs.existsSync(REGISTRY_FILE)) {
-      // Ensure directory exists
-      fs.mkdirSync(path.dirname(REGISTRY_FILE), { recursive: true })
-      fs.writeFileSync(REGISTRY_FILE, JSON.stringify([]))
-      return []
+    let fileShares: any[] = []
+    if (fs.existsSync(REGISTRY_FILE)) {
+      const data = fs.readFileSync(REGISTRY_FILE, 'utf8')
+      fileShares = JSON.parse(data)
     }
-    const data = fs.readFileSync(REGISTRY_FILE, 'utf8')
-    return JSON.parse(data)
+    // Merge array unique by id
+    const merged = [...fileShares]
+    for (const memShare of globalForShares.sharesMemory) {
+      if (!merged.some(x => x.id === memShare.id)) {
+        merged.push(memShare)
+      }
+    }
+    globalForShares.sharesMemory = merged
+    return globalForShares.sharesMemory
   } catch (e) {
     console.error('Error reading shared records registry:', e)
-    return []
+    return globalForShares.sharesMemory || []
   }
 }
 
 // Helper to write to the registry
-function writeRegistry(data: any) {
+function writeRegistry(data: any[]) {
   try {
+    globalForShares.sharesMemory = data
+    // Write to writable dir, wrap in try-catch so it never crashes the handler if it fails
     fs.mkdirSync(path.dirname(REGISTRY_FILE), { recursive: true })
     fs.writeFileSync(REGISTRY_FILE, JSON.stringify(data, null, 2))
   } catch (e) {
