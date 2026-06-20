@@ -23,7 +23,7 @@ export async function OPTIONS(req: Request) {
 async function handleProxy(req: Request, pathArray: string[] = []) {
   try {
     const path = pathArray.join('/')
-    const targetUrl = `https://indexer-storage-turbo.0g.ai/${path}`
+    const targetUrl = `https://indexer-storage-testnet-turbo.0g.ai/${path}`
     
     // We only read body for POST requests
     const body = req.method === 'POST' ? await req.arrayBuffer() : undefined
