@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ShieldPlus, FolderOpen, Clock, Activity, ArrowRightLeft, HeartPulse, MessageSquare, Database } from 'lucide-react'
+import { ShieldPlus, FolderOpen, Clock, Activity, ArrowRightLeft, HeartPulse, MessageSquare, Database, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WalletConnect } from '@/components/wallet-connect'
 
@@ -14,6 +14,7 @@ const NAV = [
   { href: '/vault/emergency', label: 'Emergency', icon: HeartPulse },
   { href: '/vault/transactions', label: 'Transactions', icon: Database },
   { href: '/vault/chat', label: 'Chat', icon: MessageSquare },
+  { href: '/vault/swap', label: 'Swap', icon: Zap },
 ]
 
 export function DesktopSidebar() {

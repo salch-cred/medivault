@@ -9,6 +9,7 @@ import {
   MessageSquare,
   HeartPulse,
   Clock,
+  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { springSnappy } from '@/lib/motion'
@@ -30,6 +31,7 @@ const MOBILE_NAV = [
   { href: '/vault/trends', label: 'Trends', icon: LineChart },
   { href: '/vault/chat', label: 'Chat', icon: MessageSquare },
   { href: '/vault/emergency', label: 'SOS', icon: HeartPulse },
+  { href: '/vault/swap', label: 'Swap', icon: Zap },
 ]
 
 export function MobileNav() {
