@@ -72,6 +72,7 @@ export type ExtractionResult = {
   medications: Medication[]
   labResults: LabResult[]
   allergies: string[]
+  remedies: string[]
   followUps: FollowUp[]
   redFlags: RedFlag[]
   confidence: number
@@ -93,6 +94,7 @@ export const EMPTY_EXTRACTION: ExtractionResult = {
   medications: [],
   labResults: [],
   allergies: [],
+  remedies: [],
   followUps: [],
   redFlags: [],
   confidence: 0,

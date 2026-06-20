@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { ethers } from 'ethers'
 
-import { deriveVaultKey, deriveAutoWalletPk, recordKey } from '@/lib/og/crypto'
+import { deriveVaultKey, deriveAutoWalletPk, recordKey, clearMasterSeed } from '@/lib/og/crypto'
 import { OgStorageAdapter } from '@/lib/og/storage-adapter'
 import { KvIndexAdapter } from '@/lib/og/kv-index-adapter'
 import {
@@ -23,6 +23,7 @@ type VaultState = {
   status: Status
   address: string | null
   autoWalletAddress: string | null
+  autoWalletSigner: ethers.Signer | null
   error: string | null
   key: Uint8Array | null
   signer: ethers.Signer | null
@@ -53,6 +54,7 @@ export const useVault = create<VaultState>((set, get) => ({
   status: 'disconnected',
   address: null,
   autoWalletAddress: null,
+  autoWalletSigner: null,
   error: null,
   key: null,
   signer: null,
@@ -95,6 +97,7 @@ export const useVault = create<VaultState>((set, get) => ({
         status: 'connected',
         address,
         autoWalletAddress: storageSigner.address,
+        autoWalletSigner: storageSigner,
         key,
         signer,
         storage,
@@ -117,10 +120,12 @@ export const useVault = create<VaultState>((set, get) => ({
     // decrypted records or the burner private key.
     if (address) clearAddressCache(address)
     clearBurnerKey()
+    clearMasterSeed()
     set({
       status: 'disconnected',
       address: null,
       autoWalletAddress: null,
+      autoWalletSigner: null,
       key: null,
       signer: null,
       storage: null,

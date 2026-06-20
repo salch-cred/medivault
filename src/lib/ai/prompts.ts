@@ -23,6 +23,7 @@ export const EXTRACTION_SCHEMA_HINT = `Return ONLY a JSON object with EXACTLY th
   "medications": [{ "name": string, "dose": string, "frequency": string, "purpose": string }],
   "labResults": [{ "test": string, "value": string, "unit": string, "referenceRange": string, "flag": "low"|"normal"|"high"|"unknown" }],
   "allergies": string[],
+  "remedies": string[],
   "followUps": [{ "action": string, "byDate": string | null, "priority": "low"|"medium"|"high" }],
   "redFlags": [{ "issue": string, "severity": "low"|"medium"|"high", "suggestion": string }],
   "confidence": number,

@@ -28,7 +28,7 @@ const STAGE_LABEL: Record<Stage, string> = {
 }
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, key, signer, storage, index, language, eli5, addRecord } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -46,7 +46,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
       try {
         setStage('parsing')
         setPct(10)
-        const auth = await buildAuthHeader(signer, address)
+        const auth = await buildAuthHeader(autoWalletSigner, autoWalletAddress)
         const text = await extractText(file, (_s, p) => p && setPct(Math.min(40, 10 + p * 0.3)), auth)
         if (!text.trim()) throw new Error('Could not read any text from this document.')
 
@@ -108,7 +108,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, signer, address, language, eli5, addRecord, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, onUploaded],
   )
 
   return (

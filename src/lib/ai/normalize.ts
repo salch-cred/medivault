@@ -52,6 +52,7 @@ export function normalizeExtraction(input: unknown): ExtractionResult {
       flag: asFlag(l.flag),
     })),
     allergies: asArray<unknown>(o.allergies).map((a) => asString(a)).filter(Boolean),
+    remedies: asArray<unknown>(o.remedies).map((r) => asString(r)).filter(Boolean),
     followUps: asArray<Record<string, unknown>>(o.followUps).map((f) => ({
       action: asString(f.action),
       byDate: f.byDate == null ? null : asString(f.byDate),

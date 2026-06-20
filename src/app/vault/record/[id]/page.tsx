@@ -278,6 +278,22 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                     </CardContent>
                   </Card>
                 ) : null}
+                {summary.remedies && summary.remedies.length > 0 ? (
+                  <Card className="border-emerald-200">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base text-emerald-700">
+                        <Pill className="h-4 w-4" /> Recommended Remedies & Care
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="list-inside list-disc space-y-1 text-sm text-emerald-800">
+                        {summary.remedies.map((r, i) => (
+                          <li key={i}>{r}</li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                ) : null}
               </motion.div>
             </TabsContent>
 
@@ -367,6 +383,17 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 </div>
               </div>
             </section>
+
+            {summary.remedies && summary.remedies.length > 0 && (
+              <section>
+                <h3 className="mb-2 border-b-2 border-red-200 pb-1 text-lg font-semibold text-red-700">Recommended Remedies & Care</h3>
+                <ul className="list-inside list-disc text-sm text-gray-800 marker:text-red-600">
+                  {summary.remedies.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             {summary.labResults.length > 0 && (
               <section>

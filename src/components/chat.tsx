@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 type Message = { role: 'user' | 'assistant'; content: string }
 
 export function Chat() {
-  const { records, summaries, loadSummary, language, eli5, signer, address } = useVault()
+  const { records, summaries, loadSummary, language, eli5, autoWalletSigner, autoWalletAddress } = useVault()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -49,11 +49,11 @@ export function Chat() {
                 .map((c) => c.name)
                 .join(', ')}\nMeds: ${s.medications.map((m) => m.name).join(', ')}\nLabs: ${s.labResults
                 .map((l) => `${l.test} ${l.value}${l.unit} (${l.flag})`)
-                .join('; ')}`
+                .join('; ')}\nRemedies: ${s.remedies ? s.remedies.join(', ') : 'none'}`
             : '(summary unavailable)',
         }
       })
-      const auth = await buildAuthHeader(signer, address)
+      const auth = await buildAuthHeader(autoWalletSigner, autoWalletAddress)
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: {

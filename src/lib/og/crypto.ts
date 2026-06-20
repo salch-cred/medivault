@@ -1,31 +1,32 @@
 import { ethers } from 'ethers'
 
-/**
- * Fixed, human-readable message the wallet signs to derive its vault key.
- * Signing is deterministic per-wallet, so the same wallet always regenerates
- * the same AES-256 key — there is NO server-side key recovery.
- */
-export const VAULT_KEY_MESSAGE =
-  'MediVault \u2014 derive my private health-vault encryption key.\n\n' +
-  'Signing this message generates the AES-256 key that encrypts your records ' +
-  'before they ever leave this device. It costs nothing and sends no transaction. ' +
-  'Only your wallet can reproduce this key.\n\nVersion: 1'
+export const MASTER_SEED_MESSAGE =
+  'MediVault \u2014 unlock my health vault and auto-wallet.\n\n' +
+  'Signing this single message generates the AES-256 key that encrypts your records ' +
+  'and creates the background wallet that pays 0G gas fees. ' +
+  'Only your wallet can reproduce these keys.\n\nVersion: 2'
 
-export const AUTO_WALLET_MESSAGE =
-  'MediVault \u2014 unlock my Auto-Wallet.\n\n' +
-  'Signing this message generates a secure, deterministic "Auto-Wallet" tied permanently ' +
-  'to your account. This wallet runs in the background to automatically pay 0G gas fees ' +
-  'so you never have to deal with transaction popups during uploads.\n\nVersion: 1'
+let cachedMasterSeed: string | null = null
+
+export function clearMasterSeed() {
+  cachedMasterSeed = null
+}
+
+async function getMasterSeed(signer: ethers.Signer): Promise<string> {
+  if (!cachedMasterSeed) {
+    cachedMasterSeed = await signer.signMessage(MASTER_SEED_MESSAGE)
+  }
+  return cachedMasterSeed
+}
 
 /**
  * Derive a deterministic 32-byte AES-256 key from a wallet signature.
- * key = keccak256( signature(VAULT_KEY_MESSAGE) )
  */
 export async function deriveVaultKey(
   signer: ethers.Signer,
 ): Promise<Uint8Array> {
-  const signature = await signer.signMessage(VAULT_KEY_MESSAGE)
-  const digest = ethers.keccak256(ethers.toUtf8Bytes(signature))
+  const seed = await getMasterSeed(signer)
+  const digest = ethers.keccak256(ethers.toUtf8Bytes(seed + ':vault'))
   return ethers.getBytes(digest) // 32 bytes
 }
 
@@ -36,8 +37,8 @@ export async function deriveVaultKey(
 export async function deriveAutoWalletPk(
   signer: ethers.Signer,
 ): Promise<string> {
-  const signature = await signer.signMessage(AUTO_WALLET_MESSAGE)
-  const digest = ethers.keccak256(ethers.toUtf8Bytes(signature))
+  const seed = await getMasterSeed(signer)
+  const digest = ethers.keccak256(ethers.toUtf8Bytes(seed + ':auto-wallet'))
   return digest // 0x... hex string suitable for ethers.Wallet
 }
 
