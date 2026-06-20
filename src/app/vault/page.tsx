@@ -6,6 +6,7 @@ import { ConnectGate } from '@/components/connect-gate'
 import { UploadPanel } from '@/components/upload-panel'
 import { RecordList } from '@/components/record-list'
 import { OgStatus } from '@/components/og-status'
+import { MyShareId } from '@/components/my-share-id'
 import { HealthTimeline } from '@/components/health-timeline'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -139,6 +140,9 @@ export default function VaultDashboard() {
             <div className="space-y-6 md:space-y-8">
               <motion.div variants={itemVariants}>
                 <OgStatus />
+              </motion.div>
+              <motion.div variants={itemVariants}>
+                <MyShareId />
               </motion.div>
               <motion.div variants={itemVariants} className="overflow-hidden rounded-3xl border border-border/50 bg-gradient-to-br from-background/80 to-background/40 shadow-lg backdrop-blur-xl transition-transform duration-300 hover:scale-[1.01]">
                 <FollowUps />
