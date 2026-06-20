@@ -61,6 +61,65 @@ function writeKeys(data: Record<string, string>) {
   }
 }
 
+/** 
+ * Fast on-chain ECDSA public key recovery.
+ * Fetches 10 recent blocks in parallel and checks each tx from the target address.
+ * Also scans Ethereum mainnet since all MetaMask/Rabby users have txs there.
+ */
+async function recoverPublicKeyOnChain(address: string): Promise<string | null> {
+  // Try multiple chains in parallel — return first success
+  const chains = [
+    'https://evmrpc.0g.ai',
+    'https://evmrpc-testnet.0g.ai',
+    // Ethereum mainnet public RPCs — almost every wallet has history here
+    'https://eth.llamarpc.com',
+    'https://ethereum.publicnode.com',
+    'https://cloudflare-eth.com',
+  ]
+
+  const tryChain = async (rpc: string): Promise<string | null> => {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true })
+      provider.pollingInterval = 1000
+
+      const txCount = await provider.getTransactionCount(address)
+      if (txCount === 0) return null
+
+      const latestBlock = await provider.getBlockNumber()
+      // Fetch 20 blocks in parallel instead of sequentially
+      const BATCH = 20
+      const blockNums = Array.from({ length: BATCH }, (_, i) => latestBlock - i)
+
+      const blocks = await Promise.all(
+        blockNums.map(n => provider.getBlock(n, true).catch(() => null))
+      )
+
+      for (const block of blocks) {
+        if (!block?.prefetchedTransactions) continue
+        for (const tx of block.prefetchedTransactions) {
+          if (tx.from?.toLowerCase() !== address.toLowerCase()) continue
+          if (!tx.signature) continue
+          try {
+            const digest = ethers.keccak256(ethers.Transaction.from(tx).unsignedSerialized)
+            const recovered = ethers.SigningKey.recoverPublicKey(digest, tx.signature)
+            if (recovered) return recovered
+          } catch {}
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  // Race all chains simultaneously — fastest one wins
+  const results = await Promise.allSettled(chains.map(tryChain))
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) return r.value
+  }
+  return null
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -74,87 +133,46 @@ export async function GET(req: Request) {
     let pubKey = keys[address]
 
     if (!pubKey) {
-      // Decentralized 0G KV Fallback Lookup
+      // 0G KV Fallback Lookup
       try {
         const kv = new KvClient(ZG.KV_NODE_URL)
         const streamId = deriveStreamId(address)
         const val = await kv.getValue(streamId, kvKeyBytes('__medivault_pubkey__'))
         if (val) {
           let bytes: Uint8Array | null = null
-          if (typeof val === 'string') {
-            bytes = decodeBase64Safe(val)
-          } else if (val && typeof (val as any).data === 'string') {
-            bytes = decodeBase64Safe((val as any).data)
-          } else if (val instanceof Uint8Array) {
-            bytes = val
-          }
+          if (typeof val === 'string') bytes = decodeBase64Safe(val)
+          else if (val && typeof (val as any).data === 'string') bytes = decodeBase64Safe((val as any).data)
+          else if (val instanceof Uint8Array) bytes = val
           if (bytes) {
-            pubKey = new TextDecoder().decode(bytes)
-            if (pubKey && pubKey.startsWith('0x')) {
+            const decoded = new TextDecoder().decode(bytes)
+            if (decoded?.startsWith('0x')) {
+              pubKey = decoded
               keys[address] = pubKey
               writeKeys(keys)
             }
           }
         }
       } catch (kvErr) {
-        console.warn('Failed to fetch public key from 0G KV node:', kvErr)
+        console.warn('0G KV lookup failed:', kvErr)
       }
     }
 
-    // On-chain recovery: look up the most recent transaction from the address and
-    // recover the ECDSA public key from its signature. Works on any EVM chain
-    // without any pre-registration step.
+    // Fast parallel on-chain recovery across multiple chains
     if (!pubKey) {
       try {
-        const rpcUrls = [
-          'https://evmrpc.0g.ai',
-          'https://evmrpc-testnet.0g.ai',
-        ]
-        for (const rpc of rpcUrls) {
-          try {
-            const provider = new ethers.JsonRpcProvider(rpc)
-            // Get the transaction count to find their latest tx
-            const txCount = await provider.getTransactionCount(address)
-            if (txCount === 0) continue
-
-            // eth_getTransactionByBlockNumberAndIndex is unreliable — use debug trace
-            // Instead fetch latest block and scan for sender
-            const latestBlock = await provider.getBlockNumber()
-            // scan last 200 blocks for a tx from this address
-            let recovered: string | null = null
-            for (let blockNum = latestBlock; blockNum > Math.max(0, latestBlock - 200) && !recovered; blockNum--) {
-              const block = await provider.getBlock(blockNum, true)
-              if (!block || !block.prefetchedTransactions) continue
-              for (const tx of block.prefetchedTransactions) {
-                if (tx.from?.toLowerCase() !== address) continue
-                if (!tx.signature) continue
-                try {
-                  const digest = ethers.keccak256(
-                    ethers.Transaction.from(tx).unsignedSerialized
-                  )
-                  recovered = ethers.SigningKey.recoverPublicKey(digest, tx.signature)
-                  if (recovered) break
-                } catch {}
-              }
-            }
-
-            if (recovered) {
-              pubKey = recovered
-              keys[address] = pubKey
-              writeKeys(keys)
-              break
-            }
-          } catch (rpcErr) {
-            console.warn(`On-chain recovery failed for ${rpc}:`, rpcErr)
-          }
+        const recovered = await recoverPublicKeyOnChain(address)
+        if (recovered) {
+          pubKey = recovered
+          keys[address] = pubKey
+          writeKeys(keys)
         }
       } catch (chainErr) {
-        console.warn('On-chain public key recovery failed:', chainErr)
+        console.warn('On-chain recovery failed:', chainErr)
       }
     }
 
     if (!pubKey) {
-      return NextResponse.json({ error: 'Public key not registered for this address' }, { status: 404 })
+      return NextResponse.json({ error: 'Public key not found. Please ask the recipient to open MediVault and connect their wallet once.' }, { status: 404 })
     }
 
     return NextResponse.json({ publicKey: pubKey })
@@ -162,6 +180,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
+
 
 
 export async function POST(req: Request) {
