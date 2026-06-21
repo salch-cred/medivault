@@ -16,6 +16,11 @@ function envKey(hash: string): string {
 
 export async function GET(req: Request) {
   try {
+    // Require authentication to prevent metadata leakage.
+    // Only authenticated users can fetch share envelopes.
+    const auth = verifyAuth(req)
+    if (!auth.ok) return auth.response
+
     const { searchParams } = new URL(req.url)
     const hash = searchParams.get('hash')?.toLowerCase()
     if (!hash || !ROOT_RE.test(hash)) {
@@ -40,8 +45,8 @@ export async function GET(req: Request) {
       return NextResponse.json({})
     }
     return NextResponse.json({ envelope: parsed })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Internal error.' }, { status: 500 })
   }
 }
 
@@ -61,7 +66,7 @@ export async function POST(req: Request) {
     }
     await fetch(`${KV_BASE}/UpdateValue/${KV_NS}/${envKey(hash)}/${hex}`, { method: 'POST' })
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Internal error.' }, { status: 500 })
   }
 }
