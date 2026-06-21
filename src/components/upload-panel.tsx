@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { Disclaimer } from '@/components/disclaimer'
 import { OptionsBar } from '@/components/options-bar'
 import { useVault } from '@/lib/store'
-import { extractText } from '@/lib/doc/parse'
+import { detectKind, extractText } from '@/lib/doc/parse'
 import { normalizeExtraction } from '@/lib/ai/normalize'
 import { buildAuthHeader, createAuthedProvider } from '@/lib/client/auth'
 import { deriveRecordKey, newRecordSalt, saltToHex } from '@/lib/og/crypto'
@@ -36,6 +36,34 @@ const LABEL_EXIT = { opacity: 0, y: -4 }
 const LABEL_TRANSITION = { duration: 0.2 }
 const PROGRESS_INITIAL = { opacity: 0 }
 const PROGRESS_ANIMATE = { opacity: 1 }
+
+function titleFromFile(file: File): string {
+  const clean = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim()
+  return clean || 'Uploaded document'
+}
+
+function fallbackSummary(file: File, text: string, reason?: unknown): ExtractionResult {
+  const kind = detectKind(file)
+  const docType = kind === 'image' ? 'imaging' : 'other'
+  const reasonText = reason instanceof Error ? reason.message : reason ? String(reason) : ''
+  const plainLanguageSummary = [
+    'This document was uploaded and encrypted successfully.',
+    'Automatic text extraction or AI explanation was unavailable, so MediVault saved a basic record summary instead.',
+    reasonText ? `Reason: ${reasonText}` : '',
+    text?.trim() ? `Extracted text preview:\n${text.trim().slice(0, 1200)}` : '',
+  ].filter(Boolean).join('\n\n')
+
+  return normalizeExtraction({
+    title: titleFromFile(file),
+    docType,
+    date: null,
+    plainLanguageSummary,
+    confidence: 0,
+    sourceQuotes: text?.trim()
+      ? [{ quote: text.trim().slice(0, 220), supports: 'Extracted document text preview' }]
+      : [],
+  })
+}
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
   const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, signer } = useVault()
@@ -65,25 +93,44 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setPct(10)
         setDetail('')
         const auth = await buildAuthHeader(autoWalletSigner, autoWalletAddress)
-        const text = await extractText(file, (_s, p) => p && setPct(Math.min(40, 10 + p * 0.3)), auth)
-        if (!text.trim()) throw new Error('Could not read any text from this document.')
+
+        let text = ''
+        let extractionWarning: unknown = null
+        try {
+          text = await extractText(file, (_s, p) => p && setPct(Math.min(40, 10 + p * 0.3)), auth)
+        } catch (parseErr) {
+          extractionWarning = parseErr
+          console.warn('Document text extraction failed; continuing with fallback summary:', parseErr)
+          text = `Uploaded file: ${file.name}\nMIME type: ${file.type || 'unknown'}\nSize: ${file.size} bytes`
+          toast.message('Text extraction failed, but the encrypted original will still be saved to 0G.')
+        }
+        if (!text.trim()) {
+          text = `Uploaded file: ${file.name}\nMIME type: ${file.type || 'unknown'}\nSize: ${file.size} bytes`
+        }
 
         setStage('analyzing')
         setPct(55)
-        const res = await fetch('/api/ai/extract', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(auth ? { 'x-medivault-auth': auth } : {}),
-          },
-          body: JSON.stringify({ text, language, eli5 }),
-        })
-        if (!res.ok) {
-          const { error } = await res.json().catch(() => ({ error: 'AI extraction failed' }))
-          throw new Error(error)
+        let summary: ExtractionResult
+        try {
+          const res = await fetch('/api/ai/extract', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(auth ? { 'x-medivault-auth': auth } : {}),
+            },
+            body: JSON.stringify({ text, language, eli5 }),
+          })
+          if (!res.ok) {
+            const { error } = await res.json().catch(() => ({ error: 'AI extraction failed' }))
+            throw new Error(error)
+          }
+          const { result } = (await res.json()) as { result: ExtractionResult }
+          summary = normalizeExtraction(result)
+        } catch (aiErr) {
+          console.warn('AI extraction failed; continuing with fallback summary:', aiErr)
+          summary = fallbackSummary(file, text, extractionWarning ?? aiErr)
+          toast.message('AI explanation failed, but the encrypted original will still be saved to 0G.')
         }
-        const { result } = (await res.json()) as { result: ExtractionResult }
-        const summary = normalizeExtraction(result)
 
         setStage('encrypting')
         setPct(75)
@@ -106,7 +153,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         const meta: RecordMeta = {
           id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `rec_${Date.now()}`,
           owner: address!,
-          title: summary.title,
+          title: summary.title || titleFromFile(file),
           docType: summary.docType,
           date: summary.date,
           rootHash: filePrep.rootHash,

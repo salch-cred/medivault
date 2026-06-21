@@ -1,7 +1,5 @@
 'use client'
 
-import Tesseract from 'tesseract.js'
-
 export type ParseProgress = (stage: string, pct?: number) => void
 
 export function detectKind(file: File): 'text' | 'pdf' | 'image' | 'unsupported' {
@@ -17,7 +15,14 @@ export function detectKind(file: File): 'text' | 'pdf' | 'image' | 'unsupported'
   return 'unsupported'
 }
 
-/** Extract raw text from a medical document (TXT/MD client, PDF server, image OCR). */
+/**
+ * Extract raw text from a medical document.
+ *
+ * Important reliability rule: this function must never depend on browser-side
+ * CDN workers. The previous Tesseract path tried to load worker scripts from
+ * cdn.jsdelivr.net and broke uploads when those workers failed. Image OCR is now
+ * a safe metadata fallback so the encrypted original still uploads to 0G.
+ */
 export async function extractText(
   file: File,
   onProgress?: ParseProgress,
@@ -51,15 +56,13 @@ export async function extractText(
   }
 
   if (kind === 'image') {
-    onProgress?.('Running OCR', 5)
-    const result = await Tesseract.recognize(file, 'eng', {
-      logger: (m: { status: string; progress: number }) => {
-        if (m.status === 'recognizing text') {
-          onProgress?.('Running OCR', Math.round(m.progress * 100))
-        }
-      },
-    })
-    return result.data.text
+    onProgress?.('Preparing image', 100)
+    return [
+      `Image file uploaded: ${file.name}`,
+      file.type ? `MIME type: ${file.type}` : '',
+      `Size: ${file.size} bytes`,
+      'Browser OCR is unavailable in this deployment, so the original image will be encrypted and stored on 0G with a basic record summary.',
+    ].filter(Boolean).join('\n')
   }
 
   throw new Error(
