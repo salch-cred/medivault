@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { requireAuthAddress } from '@/lib/server/auth'
+import { requireAuthAddress, verifyAuth } from '@/lib/server/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,6 +42,11 @@ async function writePubKey(address: string, publicKey: string): Promise<void> {
 
 export async function GET(req: Request) {
   try {
+    // Require authentication to prevent public key oracle attacks.
+    // Only authenticated users can look up another user's public key.
+    const auth = verifyAuth(req)
+    if (!auth.ok) return auth.response
+
     const { searchParams } = new URL(req.url)
     const addressRaw = searchParams.get('address')
     if (!addressRaw || !ethers.isAddress(addressRaw)) {
@@ -50,11 +55,11 @@ export async function GET(req: Request) {
     const address = ethers.getAddress(addressRaw).toLowerCase()
     const pubKey = await readPubKey(address)
     if (!pubKey) {
-      return NextResponse.json({ error: 'Public key not found. Please ask the recipient to open MediVault and connect their wallet once.' }, { status: 404 })
+      return NextResponse.json({ error: 'Public key not found.' }, { status: 404 })
     }
     return NextResponse.json({ publicKey: pubKey })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Internal error.' }, { status: 500 })
   }
 }
 
@@ -75,7 +80,7 @@ export async function POST(req: Request) {
 
     await writePubKey(addrLower, ethers.SigningKey.computePublicKey(publicKey, true))
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Internal error.' }, { status: 500 })
   }
 }
