@@ -182,31 +182,10 @@ export const useVault = create<VaultState>((set, get) => ({
     const { storage, key, summaries, address } = get()
     if (summaries[meta.id]) return summaries[meta.id]
 
-    // Try persistent database first for fast & reliable lookup
-    try {
-      const dbRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/p0vd5ml2/summary_${meta.id}`)
-      if (dbRes.ok) {
-        const raw = await dbRes.text()
-        const cleaned = raw.replace(/"/g, '').trim()
-        if (cleaned) {
-          const matches = cleaned.match(/.{1,2}/g)
-          if (matches) {
-            const decoded = new TextDecoder().decode(new Uint8Array(matches.map(byte => parseInt(byte, 16))))
-            const parsed = JSON.parse(decoded) as ExtractionResult
-            if (parsed && typeof parsed === 'object') {
-              const newSummaries = { ...get().summaries, [meta.id]: parsed }
-              set({ summaries: newSummaries })
-              if (address && key) {
-                await saveCachedSummaries(address, key, newSummaries)
-              }
-              return parsed
-            }
-          }
-        }
-      }
-    } catch (dbErr) {
-      console.warn('Persistent DB summary fetch failed:', dbErr)
-    }
+    // Summaries are loaded exclusively from 0G decentralized storage.
+    // Previously they were cached in a public third-party key-value store
+    // (keyvalue.immanuel.co) which leaked decrypted PHI to anyone who guessed
+    // the hardcoded API key. That has been removed entirely.
 
     if (!storage || !key || !meta.summaryRootHash) return null
     try {
@@ -215,16 +194,6 @@ export const useVault = create<VaultState>((set, get) => ({
       const parsed = JSON.parse(new TextDecoder().decode(bytes)) as ExtractionResult
       const newSummaries = { ...get().summaries, [meta.id]: parsed }
       set({ summaries: newSummaries })
-      
-      // Save back to persistent DB for subsequent fast loads
-      try {
-        const hex = Array.from(new TextEncoder().encode(JSON.stringify(parsed)))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
-        await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/p0vd5ml2/summary_${meta.id}/${hex}`, { method: 'POST' })
-      } catch (dbSaveErr) {
-        console.warn('Failed to sync summary back to persistent DB:', dbSaveErr)
-      }
 
       if (address) {
         await saveCachedSummaries(address, key, newSummaries)
@@ -244,15 +213,8 @@ export const useVault = create<VaultState>((set, get) => ({
       summaries: newSummaries,
     })
 
-    // Save to persistent database
-    try {
-      const hex = Array.from(new TextEncoder().encode(JSON.stringify(summary)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-      void fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/p0vd5ml2/summary_${meta.id}/${hex}`, { method: 'POST' }).catch(() => {})
-    } catch (e) {
-      console.warn('Failed to serialize summary for persistent DB:', e)
-    }
+    // No longer syncing to keyvalue.immanuel.co — summaries live only on
+    // 0G Storage (encrypted) and the encrypted localStorage cache.
 
     if (address && key) {
       void saveCachedRecords(address, key, newRecords)

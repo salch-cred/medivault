@@ -5,7 +5,7 @@ import {
   eli5Instruction,
   languageInstruction,
 } from '@/lib/ai/prompts'
-import { verifyAuth, clamp, LIMITS } from '@/lib/server/auth'
+import { verifyAuth, clamp, LIMITS, checkRateLimit } from '@/lib/server/auth'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -23,12 +23,17 @@ export async function POST(req: NextRequest) {
     const auth = verifyAuth(req)
     if (!auth.ok) return auth.response
 
+    // Per-address rate limiting to prevent abuse of the chat proxy.
+    if (!checkRateLimit(auth.address, 'chat', 20)) {
+      return NextResponse.json({ error: 'Rate limit exceeded. Please wait a moment.' }, { status: 429 })
+    }
+
     const { question, records, language, eli5, history } = (await req.json()) as {
       question?: string
       records?: RecordContext[]
       language?: string
       eli5?: boolean
-      history?: { role: 'user' | 'assistant'; content: string }[]
+      history?: { role: string; content: string }[]
     }
     const safeQuestion = clamp(question, LIMITS.MAX_QUESTION)
     if (!safeQuestion.trim()) {
@@ -49,12 +54,8 @@ export async function POST(req: NextRequest) {
       )
       .join('\n\n')
 
-    const apiKey = process.env.AI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json({ error: 'AI_API_KEY is not configured.' }, { status: 500 })
-    }
-    const baseUrl = process.env.AI_BASE_URL || 'https://api.mistral.ai/v1'
-    const model = process.env.AI_MODEL || 'open-mistral-nemo'
+    const client = getAiClient()
+    const model = getAiModel()
 
     // Build multi-turn conversation messages
     const conversationMessages: { role: string; content: string }[] = [
@@ -66,7 +67,10 @@ export async function POST(req: NextRequest) {
     ]
 
     // Add conversation history (last 10 turns to keep token usage bounded)
-    const safeHistory = (history ?? []).slice(-10)
+    // Only allow 'user' and 'assistant' roles — reject 'system' injections.
+    const safeHistory = (history ?? []).slice(-10).filter(
+      (msg) => msg.role === 'user' || msg.role === 'assistant',
+    )
     for (const msg of safeHistory) {
       conversationMessages.push({
         role: msg.role,
@@ -79,68 +83,60 @@ export async function POST(req: NextRequest) {
       role: 'user',
       content: safeQuestion,
     })
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'Connection': 'close'
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        messages: conversationMessages,
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "share_record",
-              description: "Triggers when the user asks to share a medical record with someone. You must extract the recipient's wallet address and the sender's name from the prompt.",
-              parameters: {
-                type: "object",
-                properties: {
-                  recordId: { type: "string", description: "The ID of the record the user wants to share" },
-                  recipientAddress: { type: "string", description: "The 0x... EVM wallet address of the recipient" },
-                  senderName: { type: "string", description: "The name of the user sharing the record (if they provided one)" }
-                },
-                required: ["recordId", "recipientAddress", "senderName"]
-              }
-            }
-          },
-          {
-            type: "function",
-            function: {
-              name: "fund_wallet",
-              description: "Triggers when the user wants to transfer/send/swap OG tokens from their main wallet to their auto-wallet. Use this when the user says things like 'fund my auto wallet', 'send 0.5 OG to auto wallet', 'swap to auto wallet', 'top up auto wallet', or 'transfer funds'. Extract the amount they want to send.",
-              parameters: {
-                type: "object",
-                properties: {
-                  amount: { type: "string", description: "The amount of OG tokens to transfer (e.g. '0.5', '1', '0.01'). If the user says 'all' or 'max', use 'max'." }
-                },
-                required: ["amount"]
-              }
+
+    const completion = await client.chat.completions.create({
+      model,
+      temperature: 0.2,
+      messages: conversationMessages as never,
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'share_record',
+            description: "Triggers when the user asks to share a medical record with someone. You must extract the recipient's wallet address and the sender's name from the prompt.",
+            parameters: {
+              type: 'object',
+              properties: {
+                recordId: { type: 'string', description: 'The ID of the record the user wants to share' },
+                recipientAddress: { type: 'string', description: 'The 0x... EVM wallet address of the recipient' },
+                senderName: { type: 'string', description: 'The name of the user sharing the record (if they provided one)' }
+              },
+              required: ['recordId', 'recipientAddress', 'senderName']
             }
           }
-        ]
-      }),
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'fund_wallet',
+            description: "Triggers when the user wants to transfer/send/swap OG tokens from their main wallet to their auto-wallet. Use this when the user says things like 'fund my auto wallet', 'send 0.5 OG to auto wallet', 'swap to auto wallet', 'top up auto wallet', or 'transfer funds'. Extract the amount they want to send.",
+            parameters: {
+              type: 'object',
+              properties: {
+                amount: { type: 'string', description: "The amount of OG tokens to transfer (e.g. '0.5', '1', '0.01'). If the user says 'all' or 'max', use 'max'." }
+              },
+              required: ['amount']
+            }
+          }
+        }
+      ] as never,
     })
 
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`API returned ${res.status}: ${errText}`)
+    const message = completion.choices[0]?.message
+    if (!message) {
+      return NextResponse.json({ answer: 'I could not generate an answer.' })
     }
 
-    const data = await res.json()
-
-    // If the AI decides to use a tool, return the tool calls to the client
-    if (data.choices?.[0]?.message?.tool_calls?.length > 0) {
-      return NextResponse.json({ 
-        toolCalls: data.choices[0].message.tool_calls 
+    // If the AI decides to use a tool, return the tool calls AND any content
+    // it also produced (previously, content was dropped when tool_calls existed).
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      return NextResponse.json({
+        toolCalls: message.tool_calls,
+        content: message.content ?? null,
       })
     }
 
-    const answer = data.choices?.[0]?.message?.content ?? 'I could not generate an answer.'
-
+    const answer = message.content ?? 'I could not generate an answer.'
     return NextResponse.json({ answer })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'AI chat failed.'

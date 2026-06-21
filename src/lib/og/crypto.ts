@@ -4,51 +4,61 @@ export const MASTER_SEED_MESSAGE =
   'MediVault \u2014 unlock my health vault and auto-wallet.\n\n' +
   'Signing this single message generates the AES-256 key that encrypts your records ' +
   'and creates the background wallet that pays 0G gas fees. ' +
-  'Only your wallet can reproduce these keys.\n\nVersion: 2'
+  'Only your wallet can reproduce these keys.\n\nVersion: 3'
 
+// In-memory only — NEVER persisted to localStorage.
+// The wallet signature is the root secret for every key in the system
+// (AES vault key, auto-wallet private key, ECIES sharing keys).
+// Persisting it would let anyone with localStorage access (XSS, shared
+// device, forensics) steal full vault control.
 let cachedMasterSeed: string | null = null
 
 export function clearMasterSeed() {
   cachedMasterSeed = null
-  if (typeof window !== 'undefined') {
-    Object.keys(localStorage).forEach((key) => {
-      if (key.startsWith('medivault_seed_')) {
-        localStorage.removeItem(key)
-      }
-    })
-  }
 }
 
+// Track the storage key so clearMasterSeed doesn't iterate all localStorage entries.
+let cachedStorageKey: string | null = null
+
 async function getMasterSeed(signer: ethers.Signer): Promise<string> {
-  if (!cachedMasterSeed) {
-    const address = await signer.getAddress()
-    const storageKey = `medivault_seed_${address.toLowerCase()}`
+  if (cachedMasterSeed) return cachedMasterSeed
 
-    if (typeof window !== 'undefined') {
-      const fromStorage = localStorage.getItem(storageKey)
-      if (fromStorage) {
-        cachedMasterSeed = fromStorage
-        return cachedMasterSeed
-      }
-    }
-
-    cachedMasterSeed = await signer.signMessage(MASTER_SEED_MESSAGE)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(storageKey, cachedMasterSeed)
-    }
-  }
+  // Always re-prompt for a fresh signature — the seed is never persisted.
+  // This means the user sees a signature prompt each session, but it
+  // ensures the root secret never touches storage.
+  cachedMasterSeed = await signer.signMessage(MASTER_SEED_MESSAGE)
   return cachedMasterSeed
 }
 
 /**
- * Derive a deterministic 32-byte AES-256 key from a wallet signature.
+ * Derive a deterministic 32-byte AES-256 key from a wallet signature
+ * using HKDF-SHA256 for proper key separation.
  */
 export async function deriveVaultKey(
   signer: ethers.Signer,
 ): Promise<Uint8Array> {
   const seed = await getMasterSeed(signer)
-  const digest = ethers.keccak256(ethers.toUtf8Bytes(seed + ':vault'))
-  return ethers.getBytes(digest) // 32 bytes
+  // Hash signature to get uniform 32-byte input material
+  const seedMaterial = ethers.getBytes(ethers.keccak256(ethers.toUtf8Bytes(seed)))
+  // HKDF via WebCrypto for proper key derivation
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    seedMaterial as BufferSource,
+    { name: 'HKDF' },
+    false,
+    ['deriveBits'],
+  )
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode('MediVault/vault-key/v3') as BufferSource,
+      info: new TextEncoder().encode('AES-256 vault encryption') as BufferSource,
+    },
+    keyMaterial,
+    256,
+  )
+  return new Uint8Array(bits)
 }
 
 /**
@@ -64,14 +74,33 @@ export async function recoverUserPublicKey(
 
 /**
  * Derive a deterministic private key for the Auto-Wallet from a wallet signature.
+ * Uses HKDF-SHA256 for proper key separation from the vault key.
  * Returns a 0x-prefixed hex string (32 bytes).
  */
 export async function deriveAutoWalletPk(
   signer: ethers.Signer,
 ): Promise<string> {
   const seed = await getMasterSeed(signer)
-  const digest = ethers.keccak256(ethers.toUtf8Bytes(seed + ':auto-wallet'))
-  return digest // 0x... hex string suitable for ethers.Wallet
+  const seedMaterial = ethers.getBytes(ethers.keccak256(ethers.toUtf8Bytes(seed)))
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    seedMaterial as BufferSource,
+    { name: 'HKDF' },
+    false,
+    ['deriveBits'],
+  )
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode('MediVault/auto-wallet/v3') as BufferSource,
+      info: new TextEncoder().encode('auto-wallet signing key') as BufferSource,
+    },
+    keyMaterial,
+    256,
+  )
+  const bytes = new Uint8Array(bits)
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /** Stable per-owner stream id for the 0G-KV index. */
@@ -110,7 +139,6 @@ export async function deriveRecordKey(
       name: 'HKDF',
       hash: 'SHA-256',
       salt: salt as BufferSource,
-      // Context binding: ties the derived key to MediVault + AES-256 records.
       info: new TextEncoder().encode('medivault/record-key/v1') as BufferSource,
     },
     keyMaterial,
