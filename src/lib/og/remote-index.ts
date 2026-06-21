@@ -7,20 +7,10 @@
 // pointer ({ rootHash }) is persisted via /api/og/index so any device that can
 // re-derive the vault key (i.e. the same wallet) can rebuild the entire vault
 // after logout/login, a cleared cache, or on a brand-new device.
-//
-// This is what makes records survive 'lifelong' instead of living only in this
-// browser's localStorage.
 
 import type { OgStorageAdapter } from './storage-adapter'
 import type { RecordMeta } from './types'
 
-/**
- * Union several record lists by id with NO data loss. When the same id appears
- * more than once we keep the most complete entry (one carrying rootHash /
- * summaryRootHash wins; ties break on the newer createdAt). Result is sorted
- * newest-first. This replaces the old destructive 'overwrite records with
- * whatever the index returned' behaviour that erased locally-known records.
- */
 export function mergeRecords(...lists: Array<RecordMeta[] | undefined | null>): RecordMeta[] {
   const score = (x: RecordMeta) => (x.rootHash ? 2 : 0) + (x.summaryRootHash ? 1 : 0)
   const map = new Map<string, RecordMeta>()
@@ -46,15 +36,22 @@ export function mergeRecords(...lists: Array<RecordMeta[] | undefined | null>): 
   return Array.from(map.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 }
 
+function authHeaders(authHeader?: string | null): HeadersInit | undefined {
+  return authHeader ? { 'x-medivault-auth': authHeader } : undefined
+}
+
 /** Fetch + decrypt the durable record index from 0G (via the KV pointer). */
 export async function loadRemoteIndex(
   address: string,
   key: Uint8Array,
   storage: OgStorageAdapter | null,
+  authHeader?: string | null,
 ): Promise<RecordMeta[]> {
   if (!storage || !address) return []
   try {
-    const res = await fetch(`/api/og/index?address=${encodeURIComponent(address)}`)
+    const res = await fetch(`/api/og/index?address=${encodeURIComponent(address)}`, {
+      headers: authHeaders(authHeader),
+    })
     if (!res.ok) return []
     const data = (await res.json()) as { rootHash?: string }
     if (!data || !data.rootHash) return []
@@ -77,6 +74,7 @@ export async function saveRemoteIndex(
   key: Uint8Array,
   storage: OgStorageAdapter | null,
   records: RecordMeta[],
+  authHeader?: string | null,
 ): Promise<void> {
   if (!storage || !address || records.length === 0) return
   try {
@@ -86,7 +84,10 @@ export async function saveRemoteIndex(
     const { rootHash } = await storage.uploadEncrypted(bytes, key)
     const res = await fetch('/api/og/index', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authHeader ? { 'x-medivault-auth': authHeader } : {}),
+      },
       body: JSON.stringify({ address, rootHash, updatedAt: new Date().toISOString() }),
     })
     if (res.ok) lastSavedSignature = signature

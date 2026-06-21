@@ -19,6 +19,7 @@ import { useVault } from '@/lib/store'
 import { shortHash } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
 import { eciesEncrypt } from '@/lib/og/ecies'
+import { buildAuthHeader } from '@/lib/client/auth'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
 
 export function ShareDialog({
@@ -28,7 +29,7 @@ export function ShareDialog({
   meta: RecordMeta
   summary?: ExtractionResult
 }) {
-  const { storage, address: senderAddress, getRecordKey } = useVault()
+  const { storage, address: senderAddress, signer, getRecordKey } = useVault()
   const [doctorInput, setDoctorInput] = useState('')
   const [senderName, setSenderName] = useState('')
   const [sharing, setSharing] = useState(false)
@@ -52,10 +53,11 @@ export function ShareDialog({
     }
     try {
       setSharing(true)
+      const auth = await buildAuthHeader(signer, senderAddress)
+      if (!auth) throw new Error('Wallet signature is required to share securely.')
 
       let resolvedPubKey = ''
 
-      // If it looks like a wallet address (42 chars, starts with 0x)
       if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
         const lookupRes = await fetch(`/api/og/pubkey?address=${encodeURIComponent(targetDoc)}`)
         if (!lookupRes.ok) {
@@ -71,12 +73,8 @@ export function ShareDialog({
         resolvedPubKey = targetDoc
       }
 
-      // Validate / normalize the recipient public key up front.
       ethers.SigningKey.computePublicKey(resolvedPubKey, true)
 
-      // Derive the per-record AES key so we can include it in the share
-      // payload — the recipient needs it to decrypt the original document
-      // from 0G Storage.
       const recKey = await getRecordKey(meta)
       if (!recKey) {
         toast.error('Could not derive the record decryption key.')
@@ -85,11 +83,6 @@ export function ShareDialog({
       }
 
       const sharedAt = new Date().toISOString()
-
-      // Include both the AI summary AND the original record's root hash +
-      // AES key (plus file name/type) so the recipient can download the exact
-      // source document on 0G — a real, openable PDF/image — not just the AI's
-      // interpretation of it.
       const payload = {
         title: meta.title,
         docType: meta.docType,
@@ -98,7 +91,6 @@ export function ShareDialog({
         senderName: name,
         senderAddress,
         summary: summary ?? null,
-        // The recipient needs these to download+decrypt the original record:
         recordRootHash: meta.rootHash,
         recordKeySalt: meta.recordKeySalt ?? null,
         recordKeyHex: ethers.hexlify(recKey),
@@ -107,26 +99,17 @@ export function ShareDialog({
       }
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
 
-      // Durable copy on 0G (best-effort) + the rootHash that keys everything.
-      // A require(false)/revert here does NOT throw anymore: the instant KV
-      // envelope below is the primary delivery channel.
       const { rootHash, durable } = await storage.shareToRecipient(bytes, resolvedPubKey)
 
-      // ── Instant fast-path cache (PRIMARY delivery) ──────────
-      // Stash a self-contained, client-side-ECIES-encrypted copy of the SAME
-      // payload in the instant KV layer, keyed by the 0G root hash. The
-      // recipient reads + decrypts this on-device in ~1s instead of waiting
-      // (often minutes) for the small envelope to become locatable on 0G
-      // mainnet. This is now the guaranteed delivery channel: even if the
-      // durable 0G envelope copy reverted above, the recipient still gets the
-      // share instantly, and the original document is fetched from the sender's
-      // durable 0G copy via recordRootHash. The server only ever sees ciphertext.
       let kvOk = false
       try {
         const envelope = await eciesEncrypt(resolvedPubKey, bytes)
         const envRes = await fetch('/api/og/share-envelope', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-medivault-auth': auth,
+          },
           body: JSON.stringify({ hash: rootHash, envelope }),
         })
         kvOk = envRes.ok
@@ -134,17 +117,18 @@ export function ShareDialog({
         console.warn('Fast-path envelope cache failed:', cacheErr)
       }
 
-      // The share is only a REAL failure when BOTH delivery paths failed.
       if (!durable && !kvOk) {
         throw new Error(
           'Could not deliver this share right now — the 0G network is busy and the instant channel is unreachable. Your record is safe; please try again in a moment.',
         )
       }
 
-      // Register share event on the backend registry so it shows in recipient's dashboard
       const regRes = await fetch('/api/og/share', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-medivault-auth': auth,
+        },
         body: JSON.stringify({
           recipientAddress: targetDoc,
           senderName: name,
