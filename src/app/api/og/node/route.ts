@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import dns from 'dns/promises'
 import net from 'net'
+import { verifyAuth, checkRateLimit } from '@/lib/server/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-medivault-auth',
     },
   })
 }
@@ -31,6 +32,7 @@ const STRIPPED_RESPONSE_HEADERS = [
 ]
 
 const MAX_PROXY_BYTES = 20 * 1024 * 1024
+const MAX_REDIRECTS = 3
 
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
@@ -46,7 +48,15 @@ function isPrivateIp(ip: string): boolean {
   }
   if (net.isIPv6(ip)) {
     const lower = ip.toLowerCase()
-    return lower === '::1' || lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')
+    // Check for loopback, unique local, link-local, and IPv4-mapped private addresses
+    return (
+      lower === '::1' ||
+      lower.startsWith('fc') ||
+      lower.startsWith('fd') ||
+      lower.startsWith('fe80') ||
+      // IPv4-mapped IPv6 addresses (e.g. ::ffff:10.0.0.1)
+      lower.includes('::ffff:')
+    )
   }
   return true
 }
@@ -82,8 +92,53 @@ async function readLimitedBody(req: Request): Promise<ArrayBuffer | undefined> {
   return req.arrayBuffer()
 }
 
+/**
+ * Fetch with SSRF-safe redirect handling.
+ * We manually follow redirects and re-validate each redirect target.
+ */
+async function safeFetch(
+  targetUrl: URL,
+  method: string,
+  headers: Headers,
+  body: ArrayBuffer | undefined,
+  redirectCount = 0,
+): Promise<Response> {
+  if (redirectCount > MAX_REDIRECTS) {
+    throw new Error('Too many redirects')
+  }
+
+  const response = await fetch(targetUrl, {
+    method,
+    headers,
+    body,
+    redirect: 'manual', // Don't auto-follow redirects — we validate each hop
+  })
+
+  // Handle redirects manually so we can re-validate the target.
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get('location')
+    if (!location) throw new Error('Redirect with no location header')
+
+    // Resolve relative redirects against the current URL.
+    const redirectUrl = new URL(location, targetUrl)
+    // Re-validate the redirect target to prevent SSRF via redirect.
+    const safeRedirectUrl = await assertSafeTarget(redirectUrl.toString())
+    return safeFetch(safeRedirectUrl, method, headers, body, redirectCount + 1)
+  }
+
+  return response
+}
+
 async function handleProxy(req: Request) {
   try {
+    // Require authentication for node proxy access.
+    const auth = verifyAuth(req)
+    if (!auth.ok) return auth.response
+
+    if (!checkRateLimit(auth.address, 'node-proxy', 30)) {
+      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
+    }
+
     const { searchParams } = new URL(req.url)
     const targetRaw = searchParams.get('url')
     if (!targetRaw) {
@@ -93,17 +148,13 @@ async function handleProxy(req: Request) {
 
     const headers = new Headers()
     req.headers.forEach((value, key) => {
-      if (!['host', 'origin', 'referer', 'connection', 'content-length'].includes(key.toLowerCase())) {
+      if (!['host', 'origin', 'referer', 'connection', 'content-length', 'x-medivault-auth'].includes(key.toLowerCase())) {
         headers.set(key, value)
       }
     })
 
     const body = await readLimitedBody(req)
-    const response = await fetch(targetUrl, {
-      method: req.method,
-      headers,
-      body,
-    })
+    const response = await safeFetch(targetUrl, req.method, headers, body)
 
     const responseBuffer = await response.arrayBuffer()
     const responseHeaders = new Headers()
@@ -117,6 +168,6 @@ async function handleProxy(req: Request) {
       headers: responseHeaders,
     })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    return NextResponse.json({ error: 'Proxy request failed.' }, { status: 400 })
   }
 }
