@@ -44,8 +44,10 @@ function RecordView({ meta }: { meta: RecordMeta }) {
   const [loadingSummary, setLoadingSummary] = useState(!summaries[meta.id])
   const [summaryFailed, setSummaryFailed] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
   const [verified, setVerified] = useState<boolean | null>(null)
   const [docText, setDocText] = useState<string | null>(null)
+  const [docStatus, setDocStatus] = useState<string | null>(null)
   const [loadingDoc, setLoadingDoc] = useState(false)
 
   async function fetchSummary() {
@@ -91,8 +93,9 @@ function RecordView({ meta }: { meta: RecordMeta }) {
   async function verify() {
     if (!storage) return
     setVerifying(true)
+    setVerifyStatus(null)
     try {
-      const ok = await storage.verifyIntegrity(meta.rootHash)
+      const ok = await storage.verifyIntegrity(meta.rootHash, (m) => setVerifyStatus(m))
       setVerified(ok)
       toast[ok ? 'success' : 'error'](
         ok ? 'Integrity verified against 0G' : 'Integrity check failed',
@@ -101,6 +104,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
       toast.error(e instanceof Error ? e.message : 'Verify failed')
     } finally {
       setVerifying(false)
+      setVerifyStatus(null)
     }
   }
 
@@ -109,18 +113,22 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     const recKey = await getRecordKey(meta)
     if (!recKey) return
     setLoadingDoc(true)
+    setDocStatus(null)
     try {
-      const bytes = await storage.downloadDecrypted(meta.rootHash, recKey)
+      const bytes = await storage.downloadDecrypted(meta.rootHash, recKey, (m) =>
+        setDocStatus(m),
+      )
       setDocText(new TextDecoder().decode(bytes))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      if (msg.toLowerCase().includes('file not found')) {
-        toast.error('File not found on the 0G network. It may have been deleted or the root hash is invalid.')
+      if (msg.toLowerCase().includes('file not found') || /no locations|not found/i.test(msg)) {
+        toast.error('File not found on the 0G network. It may still be propagating, or the record was created on a different 0G network. Please try again in a minute.')
       } else {
         toast.error(msg || 'Could not load original document')
       }
     } finally {
       setLoadingDoc(false)
+      setDocStatus(null)
     }
   }
 
@@ -162,6 +170,12 @@ function RecordView({ meta }: { meta: RecordMeta }) {
           </div>
         </motion.div>
 
+        {verifying && verifyStatus ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> {verifyStatus}
+          </div>
+        ) : null}
+
         {verified !== null ? (
           <motion.div
             initial={SCALE_INITIAL}
@@ -173,14 +187,14 @@ function RecordView({ meta }: { meta: RecordMeta }) {
             }
           >
             {verified
-              ? 'This record’s Merkle root matches 0G — it has not been tampered with.'
-              : 'The integrity check did not pass. The stored data may be unavailable or altered.'}
+              ? 'This record\u2019s Merkle root matches 0G \u2014 it has not been tampered with.'
+              : 'The integrity check did not pass. The stored data may be unavailable or still propagating \u2014 try again in a minute.'}
           </motion.div>
         ) : null}
 
         {loadingSummary ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Decrypting summary…
+            <Loader2 className="h-4 w-4 animate-spin" /> Decrypting summary\u2026
           </div>
         ) : summary ? (
           <Tabs defaultValue="explanation">
@@ -235,7 +249,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                     <CardContent className="space-y-2 text-sm">
                       {summary.sourceQuotes.map((q, i) => (
                         <blockquote key={i} className="border-l-2 border-border pl-3 text-muted-foreground">
-                          “{q.quote}” {q.supports ? <span className="text-xs">— {q.supports}</span> : null}
+                          \u201c{q.quote}\u201d {q.supports ? <span className="text-xs">\u2014 {q.supports}</span> : null}
                         </blockquote>
                       ))}
                     </CardContent>
@@ -266,7 +280,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                         summary.conditions.map((c, i) => (
                           <div key={i}>
                             <span className="font-medium">{c.name}</span>
-                            {c.status ? ` — ${c.status}` : ''}
+                            {c.status ? ` \u2014 ${c.status}` : ''}
                             {c.note ? <p className="text-muted-foreground">{c.note}</p> : null}
                           </div>
                         ))
@@ -286,8 +300,8 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                         summary.medications.map((m, i) => (
                           <div key={i}>
                             <span className="font-medium">{m.name}</span>
-                            {m.dose ? ` · ${m.dose}` : ''}
-                            {m.frequency ? ` · ${m.frequency}` : ''}
+                            {m.dose ? ` \u00b7 ${m.dose}` : ''}
+                            {m.frequency ? ` \u00b7 ${m.frequency}` : ''}
                             {m.purpose ? <p className="text-muted-foreground">{m.purpose}</p> : null}
                           </div>
                         ))
@@ -305,10 +319,15 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 <Card>
                   <CardContent className="space-y-3 p-4">
                     {docText === null ? (
-                      <Button onClick={viewOriginal} disabled={loadingDoc} variant="outline">
-                        {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                        Download & decrypt original
-                      </Button>
+                      <>
+                        <Button onClick={viewOriginal} disabled={loadingDoc} variant="outline">
+                          {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                          Download & decrypt original
+                        </Button>
+                        {loadingDoc && docStatus ? (
+                          <p className="text-xs text-muted-foreground">{docStatus}</p>
+                        ) : null}
+                      </>
                     ) : (
                       <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
                         {docText || '(empty document)'}
@@ -341,6 +360,9 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                   Decrypt original
                 </Button>
               </div>
+              {loadingDoc && docStatus ? (
+                <p className="text-xs text-amber-800">{docStatus}</p>
+              ) : null}
               {docText !== null ? (
                 <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl bg-white p-4 text-xs text-neutral-900">
                   {docText || '(empty document)'}

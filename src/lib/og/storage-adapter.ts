@@ -33,6 +33,35 @@ const SYNC_TIMEOUT_MS = 70_000
 // How many times we re-select a fresher node after a sync stall.
 const MAX_SYNC_TIMEOUTS = 2
 
+// ── Read-path propagation retry ───────────────────────────────────────────
+// Right after a successful upload the file is on-chain and on the storage node,
+// but the indexer's getFileLocations can briefly return empty / "file not
+// found" until the node finishes syncing the submission block and the indexer
+// reflects it. Reads (download / verify / detectMode) must wait that out
+// instead of erroring immediately.
+const NOT_FOUND_RE =
+  /no locations found|file not found|not found|no location|cannot form a complete shard|no known locations/i
+
+// Recently-uploaded roots get a long, patient retry budget (they WILL become
+// locatable once indexed). Everything else fails fast so genuinely old/missing
+// records don't hang the UI. Module-level so it survives adapter re-creation
+// within the same browser session (upload + read happen in one JS context).
+const recentUploads = new Map<string, number>()
+const RECENT_UPLOAD_WINDOW_MS = 10 * 60_000
+const READ_RETRY_INTERVAL_MS = 6_000
+const READ_RETRY_ATTEMPTS_RECENT = 16 // ~90s of patient retries
+const READ_RETRY_ATTEMPTS_DEFAULT = 2 // quick fail for old/missing roots
+
+function markRecentUpload(rootHash?: string): void {
+  if (typeof rootHash === 'string' && rootHash) {
+    recentUploads.set(rootHash.toLowerCase(), Date.now())
+  }
+}
+function wasRecentlyUploaded(rootHash: string): boolean {
+  const t = recentUploads.get(rootHash.toLowerCase())
+  return t !== undefined && Date.now() - t < RECENT_UPLOAD_WINDOW_MS
+}
+
 /** Reject with a marker error if `p` doesn't settle within `ms`. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -88,6 +117,49 @@ export class OgStorageAdapter implements StorageAdapter {
     } catch {
       // ignore -- this is purely an optimization
     }
+  }
+
+  /**
+   * Retry a 0G read while a just-uploaded file is still propagating to the
+   * indexer. Only "not found / no locations" errors are retried; genuine
+   * errors (tampered proof, wrong key, malformed) surface immediately.
+   *
+   * Recently-uploaded roots get a long budget (the file WILL appear once the
+   * node syncs + the indexer reflects it); all other roots fail fast so old or
+   * genuinely-missing records don't freeze the UI for 90s.
+   */
+  private async withReadRetry<T>(
+    rootHash: string,
+    op: () => Promise<T>,
+    onProgress?: ProgressFn,
+  ): Promise<T> {
+    const recent = wasRecentlyUploaded(rootHash)
+    const maxAttempts = recent
+      ? READ_RETRY_ATTEMPTS_RECENT
+      : READ_RETRY_ATTEMPTS_DEFAULT
+    let lastErr: unknown
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await op()
+      } catch (e) {
+        lastErr = e
+        if (!NOT_FOUND_RE.test(String(e))) throw e // real error -> surface now
+        if (attempt < maxAttempts - 1) {
+          if (recent) {
+            onProgress?.(
+              `Your file is still syncing across 0G storage nodes\u2026 retrying (${attempt + 1}/${maxAttempts - 1})`,
+            )
+          } else {
+            onProgress?.('Looking for the file on 0G\u2026')
+          }
+          console.warn(
+            `0G read: "${rootHash}" not yet locatable (attempt ${attempt + 1}/${maxAttempts}); ${recent ? 'recently uploaded -- waiting for propagation' : 'not a recent upload -- failing fast'}.`,
+          )
+          await new Promise((r) => setTimeout(r, READ_RETRY_INTERVAL_MS))
+        }
+      }
+    }
+    throw lastErr
   }
 
   /**
@@ -361,6 +433,10 @@ export class OgStorageAdapter implements StorageAdapter {
       onProgress,
     })
 
+    // Remember this root so the read path waits patiently for it to propagate
+    // to the indexer instead of erroring with "file not found" right away.
+    markRecentUpload(rootHash)
+
     const txHash =
       typeof tx === 'string' ? tx : (tx as { txHash?: string } | undefined)?.txHash
     return { rootHash, txHash }
@@ -370,19 +446,26 @@ export class OgStorageAdapter implements StorageAdapter {
   async downloadDecrypted(
     rootHash: string,
     key: Uint8Array,
+    onProgress?: ProgressFn,
   ): Promise<Uint8Array> {
-    const [blob, err] = (await (this.indexer as unknown as {
-      downloadToBlob: (
-        root: string,
-        opts: unknown,
-      ) => Promise<Tuple<Blob>>
-    }).downloadToBlob(rootHash, {
-      proof: false,
-      decryption: { symmetricKey: key },
-    })) as Tuple<Blob>
-    if (err) throw new Error(String(err))
-    const buf = await (blob as Blob).arrayBuffer()
-    return new Uint8Array(buf)
+    return this.withReadRetry(
+      rootHash,
+      async () => {
+        const [blob, err] = (await (this.indexer as unknown as {
+          downloadToBlob: (
+            root: string,
+            opts: unknown,
+          ) => Promise<Tuple<Blob>>
+        }).downloadToBlob(rootHash, {
+          proof: false,
+          decryption: { symmetricKey: key },
+        })) as Tuple<Blob>
+        if (err) throw new Error(String(err))
+        const buf = await (blob as Blob).arrayBuffer()
+        return new Uint8Array(buf)
+      },
+      onProgress,
+    )
   }
 
   /** ECIES: encrypt to a doctor's wallet public key so only they can decrypt. */
@@ -403,6 +486,7 @@ export class OgStorageAdapter implements StorageAdapter {
       encryption: { type: 'ecies', recipientPubKey: compressed },
       finalityRequired: false,
     })
+    markRecentUpload(rootHash)
     return { rootHash }
   }
 
@@ -410,56 +494,78 @@ export class OgStorageAdapter implements StorageAdapter {
    * Full integrity check: downloads with proof:true so the 0G SDK
    * re-verifies the Merkle proof against the stored root hash. This is a
    * genuine tamper-detection check, not just a presence probe.
+   *
+   * Wrapped in withReadRetry so a just-uploaded file that hasn't propagated to
+   * the indexer yet doesn't report a false "integrity failed" -- it waits for
+   * the file to become locatable, then verifies the Merkle proof for real.
    */
-  async verifyIntegrity(rootHash: string): Promise<boolean> {
+  async verifyIntegrity(
+    rootHash: string,
+    onProgress?: ProgressFn,
+  ): Promise<boolean> {
     try {
-      // Download with proof:true to force Merkle re-verification.
-      // If the file has been tampered with or pruned, this will fail.
-      const [, err] = (await (this.indexer as unknown as {
-        downloadToBlob: (
-          root: string,
-          opts: unknown,
-        ) => Promise<Tuple<unknown>>
-      }).downloadToBlob(rootHash, {
-        proof: true,
-      })) as Tuple<unknown>
-      if (err) {
-        console.warn('0G integrity check failed (file may be tampered or unavailable):', err)
-        return false
-      }
+      await this.withReadRetry(
+        rootHash,
+        async () => {
+          // Download with proof:true to force Merkle re-verification.
+          const [, err] = (await (this.indexer as unknown as {
+            downloadToBlob: (
+              root: string,
+              opts: unknown,
+            ) => Promise<Tuple<unknown>>
+          }).downloadToBlob(rootHash, {
+            proof: true,
+          })) as Tuple<unknown>
+          if (err) throw new Error(String(err))
+          return true
+        },
+        onProgress,
+      )
       return true
     } catch (e) {
-      console.warn('0G integrity check error:', e)
+      console.warn(
+        '0G integrity check failed (file may be tampered or unavailable):',
+        e,
+      )
       return false
     }
   }
 
   /** null = plaintext, 'v1' = aes256, 'v2' = ecies. */
   async detectMode(rootHash: string): Promise<unknown> {
-    const [header, headerErr] = (await (this.indexer as unknown as {
-      peekHeader: (root: string) => Promise<Tuple<unknown>>
-    }).peekHeader(rootHash)) as Tuple<unknown>
-    if (headerErr) throw new Error(String(headerErr))
-    return header
+    return this.withReadRetry(rootHash, async () => {
+      const [header, headerErr] = (await (this.indexer as unknown as {
+        peekHeader: (root: string) => Promise<Tuple<unknown>>
+      }).peekHeader(rootHash)) as Tuple<unknown>
+      if (headerErr) throw new Error(String(headerErr))
+      return header
+    })
   }
 
   /** Download ECIES ciphertext from 0G and decrypt using private key. */
   async downloadDecryptedShared(
     rootHash: string,
     privateKey: string,
+    onProgress?: ProgressFn,
   ): Promise<Uint8Array> {
-    const [blob, err] = (await (this.indexer as unknown as {
-      downloadToBlob: (
-        root: string,
-        opts: unknown,
-      ) => Promise<Tuple<Blob>>
-    }).downloadToBlob(rootHash, {
-      proof: false,
-      decryption: { privateKey },
-    })) as Tuple<Blob>
-    if (err) throw new Error(String(err))
-    const buf = await (blob as Blob).arrayBuffer()
-    return new Uint8Array(buf)
+    return this.withReadRetry(
+      rootHash,
+      async () => {
+        const [blob, err] = (await (this.indexer as unknown as {
+          downloadToBlob: (
+            root: string,
+            opts: unknown,
+          ) => Promise<Tuple<Blob>>
+        }).downloadToBlob(rootHash, {
+          proof: false,
+          decryption: { privateKey },
+        })) as Tuple<Blob>
+        if (err) throw new Error(String(err))
+        const buf = await (blob as Blob).arrayBuffer()
+        return new Uint8Array(buf)
+      },
+      onProgress,
+    )
   }
 }
 

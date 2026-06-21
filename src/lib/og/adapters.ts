@@ -16,8 +16,16 @@ export interface StorageAdapter {
     onProgress?: (message: string) => void,
   ): Promise<{ rootHash: string; txHash?: string }>
 
-  /** Download ciphertext from 0G and AES-256 decrypt client-side. */
-  downloadDecrypted(rootHash: string, key: Uint8Array): Promise<Uint8Array>
+  /**
+   * Download ciphertext from 0G and AES-256 decrypt client-side.
+   * `onProgress` reports propagation-retry status while a just-uploaded file is
+   * still becoming locatable on the indexer.
+   */
+  downloadDecrypted(
+    rootHash: string,
+    key: Uint8Array,
+    onProgress?: (message: string) => void,
+  ): Promise<Uint8Array>
 
   /** Encrypt to a recipient wallet public key (ECIES) and upload. */
   shareToRecipient(
@@ -25,11 +33,21 @@ export interface StorageAdapter {
     recipientPubKey: string,
   ): Promise<{ rootHash: string }>
 
-  /** Verify the stored ciphertext still matches its Merkle root. */
-  verifyIntegrity(rootHash: string): Promise<boolean>
+  /**
+   * Verify the stored ciphertext still matches its Merkle root. `onProgress`
+   * reports propagation-retry status for a freshly-uploaded file.
+   */
+  verifyIntegrity(
+    rootHash: string,
+    onProgress?: (message: string) => void,
+  ): Promise<boolean>
 
   /** Download ECIES ciphertext from 0G and decrypt using private key. */
-  downloadDecryptedShared(rootHash: string, privateKey: string): Promise<Uint8Array>
+  downloadDecryptedShared(
+    rootHash: string,
+    privateKey: string,
+    onProgress?: (message: string) => void,
+  ): Promise<Uint8Array>
 }
 
 /**
