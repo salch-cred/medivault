@@ -439,7 +439,13 @@ export const useVault = create<VaultState>((set, get) => ({
 
       void (async () => {
         try {
-          await Promise.all([filePrep.finalize(), summaryPrep.finalize()])
+          // Finalize sequentially (NOT in parallel) so the single auto-wallet
+          // never broadcasts two Flow `submit` transactions on the same nonce at
+          // once -- that race caused nonce/gas contention and require(false)
+          // reverts. Each finalize already self-heals duplicates via the storage
+          // adapter's on-chain existence check.
+          await filePrep.finalize()
+          await summaryPrep.finalize()
           if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
           get().setUploadStatus(meta.id, 'stored')
           get().syncRemoteIndex()

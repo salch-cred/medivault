@@ -35,7 +35,7 @@ const SYNC_TIMEOUT_MS = 70_000
 // How many times we re-select a fresher node after a sync stall.
 const MAX_SYNC_TIMEOUTS = 2
 
-// ── Read-path propagation retry ───────────────────
+// ── Read-path propagation retry ─────────────────
 // Right after a successful upload the file is on-chain and on the storage node,
 // but the indexer's getFileLocations can briefly return empty / "file not
 // found" until the node finishes syncing the submission block and the indexer
@@ -43,6 +43,14 @@ const MAX_SYNC_TIMEOUTS = 2
 // instead of erroring immediately.
 const NOT_FOUND_RE =
   /no locations found|file not found|not found|no location|cannot form a complete shard|no known locations/i
+
+// A Flow `submit` that reverts deterministically (often during estimateGas)
+// surfaces as one of these. It almost always means the exact same data was
+// already submitted on a previous (timed-out / errored) attempt -- i.e. it is
+// already stored on 0G -- so we verify existence before treating it as a
+// failure rather than surfacing a scary raw revert to the user.
+const SUBMIT_REVERT_RE =
+  /execution reverted|require\(false\)|call_exception|no data present|missing revert data/i
 
 // Recently-uploaded roots get a long, patient retry budget (they WILL become
 // locatable once indexed). Everything else fails fast so genuinely old/missing
@@ -224,6 +232,44 @@ export class OgStorageAdapter implements StorageAdapter {
   }
 
   /**
+   * Lightweight, single-shot existence probe: returns true when the root's
+   * header is readable on the indexer (i.e. the file is stored AND locatable on
+   * 0G). Used to avoid re-submitting data that already landed on-chain.
+   */
+  private async peekExists(rootHash: string): Promise<boolean> {
+    try {
+      const [, err] = (await (this.indexer as unknown as {
+        peekHeader: (root: string) => Promise<Tuple<unknown>>
+      }).peekHeader(rootHash)) as Tuple<unknown>
+      return !err
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Poll the indexer briefly to decide whether a Flow `submit` that reverted
+   * actually corresponds to data that is already stored on 0G. A duplicate
+   * submission (the previous attempt's tx mined even though our client
+   * errored/timed out) reverts with require(false), but the bytes ARE on 0G --
+   * in that case the upload genuinely succeeded and must be treated as success.
+   */
+  private async confirmStoredAfterRevert(
+    rootHash: string,
+    onProgress?: ProgressFn,
+  ): Promise<boolean> {
+    const attempts = 8
+    for (let i = 0; i < attempts; i++) {
+      if (await this.peekExists(rootHash)) return true
+      if (i < attempts - 1) {
+        onProgress?.('Confirming your record already saved on 0G…')
+        await new Promise((r) => setTimeout(r, 3000))
+      }
+    }
+    return false
+  }
+
+  /**
    * Evict any transaction stuck in the mempool before we submit a new one.
    *
    * The REPLACEMENT_UNDERPRICED loop happens because a prior Flow `submit` tx
@@ -298,7 +344,7 @@ export class OgStorageAdapter implements StorageAdapter {
    * Upload a prepared blob through the 0G SDK with smart, gas-aware retries and
    * a bounded wait for storage-node sync.
    *
-   * Two independent failure modes are handled:
+   * Failure modes handled:
    *  - Stuck-nonce / underpriced submit tx: we clear the stuck nonce, start
    *    above the gas floor, and escalate each retry (>=110% replaces a pending
    *    tx).
@@ -307,10 +353,16 @@ export class OgStorageAdapter implements StorageAdapter {
    *    bust the node cache to re-evaluate sync heights, and retry on a fresher
    *    node. The retry's findExistingFileInfo skips re-submission once any node
    *    has synced the entry, so it usually costs no extra storage fee.
+   *  - Duplicate submit / require(false): a prior attempt's submit may have
+   *    landed on-chain even though our client errored or timed out. Re-submitting
+   *    the same data then reverts with require(false). We skip re-submission when
+   *    the root is already locatable, and treat a post-submit revert as success
+   *    once we confirm the data is genuinely stored on 0G.
    */
   private async uploadWithRetry(
     blob: unknown,
     uploadOpts: unknown,
+    rootHash?: string,
   ): Promise<{ txHash?: string } | string | undefined> {
     await this.assertIndexerHasNodes()
     // Pre-flight: unstick any leftover pending tx so the SDK gets a clean nonce.
@@ -329,6 +381,17 @@ export class OgStorageAdapter implements StorageAdapter {
     let lastErr: unknown
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // On a retry, a prior attempt's submit may already have landed on-chain
+      // even though our client errored/timed out. Re-submitting the same data
+      // makes the Flow contract revert with require(false); skip it entirely if
+      // the root is already locatable on 0G.
+      if (attempt > 0 && rootHash && (await this.peekExists(rootHash))) {
+        console.warn(
+          '0G upload: data already stored from a previous attempt; skipping re-submit.',
+        )
+        return undefined
+      }
+
       const txOpts = gasPrice !== undefined ? { gasPrice } : undefined
 
       let attemptTx: { txHash?: string } | string | undefined
@@ -383,6 +446,25 @@ export class OgStorageAdapter implements StorageAdapter {
       // Permanent errors: never retry.
       if (/insufficient funds|exceeds balance|invalid (sender|signature)|malformed/i.test(errStr)) {
         throw new Error(errStr)
+      }
+
+      // Flow `submit` reverted (require(false) / CALL_EXCEPTION). The data may
+      // actually already be stored: a previous attempt's submit tx mined even
+      // though our client errored or timed out, so this attempt hit a duplicate
+      // submission. Confirm on-chain before treating it as a real failure.
+      if (SUBMIT_REVERT_RE.test(errStr)) {
+        if (rootHash) {
+          onProgress?.('Checking whether your record already saved on 0G…')
+          if (await this.confirmStoredAfterRevert(rootHash, onProgress)) {
+            console.warn(
+              'Flow submit reverted, but the data is already stored on 0G; treating as success.',
+            )
+            return tx
+          }
+        }
+        throw new Error(
+          'The 0G storage contract rejected this submission (require(false)). The entry is likely mid-registration or already stored -- your record is kept safely and will auto-retry shortly.',
+        )
       }
 
       // Stuck-nonce / fee problems: bump gas and retry.
@@ -458,11 +540,15 @@ export class OgStorageAdapter implements StorageAdapter {
     const finalize = async (
       onProgress?: ProgressFn,
     ): Promise<{ txHash?: string }> => {
-      const tx = await this.uploadWithRetry(blob, {
-        encryption: { type: 'aes256', key },
-        finalityRequired: false,
-        onProgress,
-      })
+      const tx = await this.uploadWithRetry(
+        blob,
+        {
+          encryption: { type: 'aes256', key },
+          finalityRequired: false,
+          onProgress,
+        },
+        rootHash,
+      )
       // Remember this root so the read path waits patiently for propagation.
       markRecentUpload(rootHash)
       const txHash =
@@ -528,10 +614,14 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    await this.uploadWithRetry(mem, {
-      encryption: { type: 'ecies', recipientPubKey: compressed },
-      finalityRequired: false,
-    })
+    await this.uploadWithRetry(
+      mem,
+      {
+        encryption: { type: 'ecies', recipientPubKey: compressed },
+        finalityRequired: false,
+      },
+      rootHash,
+    )
     markRecentUpload(rootHash)
     return { rootHash }
   }
