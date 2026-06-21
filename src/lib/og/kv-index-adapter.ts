@@ -13,6 +13,7 @@ import {
   getFlowContract,
 } from '@0gfoundation/0g-storage-ts-sdk'
 import { ZG } from './config'
+import { applyNodeProxy } from './proxy'
 import type { IndexAdapter } from './adapters'
 import type { RecordMeta } from './types'
 import { deriveStreamId, kvKeyBytes, KV_INDEX_LIST_KEY } from './crypto'
@@ -35,34 +36,6 @@ function decodeBase64Safe(value: string): Uint8Array | null {
   }
 }
 
-function proxyNodeUrls(indexer: any) {
-  if (typeof window === 'undefined') return
-
-  const originalGetShardedNodes = indexer.getShardedNodes.bind(indexer)
-  indexer.getShardedNodes = async (...args: any[]) => {
-    const res = await originalGetShardedNodes(...args)
-    if (res && res.trusted) {
-      res.trusted = res.trusted.map((node: any) => ({
-        ...node,
-        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(node.url)}`
-      }))
-    }
-    return res
-  }
-
-  const originalGetFileLocations = indexer.getFileLocations.bind(indexer)
-  indexer.getFileLocations = async (...args: any[]) => {
-    const res = await originalGetFileLocations(...args)
-    if (Array.isArray(res)) {
-      return res.map((loc: any) => ({
-        ...loc,
-        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(loc.url)}`
-      }))
-    }
-    return res
-  }
-}
-
 export class KvIndexAdapter implements IndexAdapter {
   private readonly signer: ethers.Signer
   private readonly indexer: Indexer
@@ -75,7 +48,7 @@ export class KvIndexAdapter implements IndexAdapter {
     this.owner = owner
     this.streamId = deriveStreamId(owner)
     this.indexer = new Indexer(ZG.INDEXER_RPC)
-    proxyNodeUrls(this.indexer)
+    applyNodeProxy(this.indexer) // shared proxy — no longer duplicated inline
     this.kv = new KvClient(ZG.KV_NODE_URL)
   }
 
@@ -199,6 +172,7 @@ export class KvIndexAdapter implements IndexAdapter {
     const record = await this.readJson<RecordMeta>(id)
     if (record) return record
 
+    // Fall back to localStorage only if KV is unavailable.
     if (typeof window !== 'undefined') {
       try {
         const key = `medivault_local_records_${this.owner.toLowerCase()}`
@@ -215,27 +189,41 @@ export class KvIndexAdapter implements IndexAdapter {
   }
 
   async list(owner: string): Promise<RecordMeta[]> {
-    let list: RecordMeta[] = []
+    const ownerLower = owner.toLowerCase()
+
+    // Try 0G-KV first.
     try {
       const ids = await this.readIdList()
-      const records = await Promise.all(ids.map((id) => this.get(id)))
-      list = records.filter((r): r is RecordMeta => !!r && r.owner.toLowerCase() === owner.toLowerCase())
+      if (ids.length > 0) {
+        const records = await Promise.all(ids.map((id) => this.readJson<RecordMeta>(id)))
+        const filtered = records.filter(
+          (r): r is RecordMeta => !!r && r.owner.toLowerCase() === ownerLower,
+        )
+        if (filtered.length > 0) {
+          return filtered.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        }
+      }
     } catch (e) {
       console.warn('Failed to list records from 0G KV index:', e)
     }
 
-    if (list.length === 0 && typeof window !== 'undefined') {
+    // Fall back to localStorage ONLY if KV returned nothing.
+    // Apply the same owner filter to localStorage results for consistency.
+    if (typeof window !== 'undefined') {
       try {
-        const key = `medivault_local_records_${owner.toLowerCase()}`
+        const key = `medivault_local_records_${ownerLower}`
         const existing = localStorage.getItem(key)
         if (existing) {
-          list = JSON.parse(existing)
+          const list: RecordMeta[] = JSON.parse(existing)
+          return list
+            .filter((r) => r.owner.toLowerCase() === ownerLower)
+            .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         }
       } catch (e) {
         console.warn('Failed to read fallback list from localStorage:', e)
       }
     }
 
-    return list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    return []
   }
 }

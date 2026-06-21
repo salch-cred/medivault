@@ -27,7 +27,7 @@ export function ShareDialog({
   meta: RecordMeta
   summary?: ExtractionResult
 }) {
-  const { storage, address: senderAddress } = useVault()
+  const { storage, address: senderAddress, getRecordKey } = useVault()
   const [doctorInput, setDoctorInput] = useState('')
   const [senderName, setSenderName] = useState('')
   const [sharing, setSharing] = useState(false)
@@ -42,7 +42,7 @@ export function ShareDialog({
     const targetDoc = doctorInput.trim()
     const name = senderName.trim()
     if (!targetDoc) {
-      toast.error('Enter the doctor’s wallet address.')
+      toast.error('Enter the doctor's wallet address.')
       return
     }
     if (!name) {
@@ -73,8 +73,21 @@ export function ShareDialog({
       // Validate / normalize the recipient public key up front.
       ethers.SigningKey.computePublicKey(resolvedPubKey, true)
       
+      // Derive the per-record AES key so we can include it in the share
+      // payload — the doctor needs it to decrypt the original document
+      // from 0G Storage.
+      const recKey = await getRecordKey(meta)
+      if (!recKey) {
+        toast.error('Could not derive the record decryption key.')
+        setSharing(false)
+        return
+      }
+
       const sharedAt = new Date().toISOString()
       
+      // Include both the AI summary AND the original record's root hash +
+      // AES key so the doctor can access the source document on 0G, not
+      // just the AI's interpretation of it.
       const payload = {
         title: meta.title,
         docType: meta.docType,
@@ -83,6 +96,10 @@ export function ShareDialog({
         senderName: name,
         senderAddress,
         summary: summary ?? null,
+        // The doctor needs these to download+decrypt the original record:
+        recordRootHash: meta.rootHash,
+        recordKeySalt: meta.recordKeySalt ?? null,
+        recordKeyHex: ethers.hexlify(recKey),
       }
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
       const { rootHash } = await storage.shareToRecipient(bytes, resolvedPubKey)
@@ -108,8 +125,8 @@ export function ShareDialog({
       }
 
       setShareHash(rootHash)
-      toast.success('Encrypted securely and shared directly to the doctor’s dashboard!')
-    } catch (e) {
+      toast.success('Encrypted securely and shared directly to the doctor's dashboard!')
+    }catch(e){
       toast.error(e instanceof Error ? e.message : 'Share failed')
     } finally {
       setSharing(false)
@@ -127,7 +144,7 @@ export function ShareDialog({
         <DialogHeader>
           <DialogTitle>Share securely with family, friends, or doctors</DialogTitle>
           <DialogDescription>
-            Re-encrypts this record securely to the recipient’s key and posts it directly to their dashboard.
+            Re-encrypts this record securely to the recipient's key and posts it directly to their dashboard.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -141,10 +158,10 @@ export function ShareDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="doctorAddress">Recipient’s Wallet Address</Label>
+            <Label htmlFor="doctorAddress">Recipient's Wallet Address</Label>
             <Input
               id="doctorAddress"
-              placeholder="0x… (EVM wallet address of family, friend, or doctor)"
+              placeholder="0x... (EVM wallet address of family, friend, or doctor)"
               value={doctorInput}
               onChange={(e) => setDoctorInput(e.target.value)}
             />

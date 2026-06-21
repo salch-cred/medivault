@@ -16,37 +16,10 @@ import {
   Indexer,
 } from '@0gfoundation/0g-storage-ts-sdk'
 import { ZG } from './config'
+import { applyNodeProxy } from './proxy'
 import type { StorageAdapter } from './adapters'
 
 type Tuple<T> = [T, unknown]
-
-function proxyNodeUrls(indexer: any) {
-  if (typeof window === 'undefined') return
-
-  const originalGetShardedNodes = indexer.getShardedNodes.bind(indexer)
-  indexer.getShardedNodes = async (...args: any[]) => {
-    const res = await originalGetShardedNodes(...args)
-    if (res && res.trusted) {
-      res.trusted = res.trusted.map((node: any) => ({
-        ...node,
-        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(node.url)}`
-      }))
-    }
-    return res
-  }
-
-  const originalGetFileLocations = indexer.getFileLocations.bind(indexer)
-  indexer.getFileLocations = async (...args: any[]) => {
-    const res = await originalGetFileLocations(...args)
-    if (Array.isArray(res)) {
-      return res.map((loc: any) => ({
-        ...loc,
-        url: `${window.location.origin}/api/og/node?url=${encodeURIComponent(loc.url)}`
-      }))
-    }
-    return res
-  }
-}
 
 export class OgStorageAdapter implements StorageAdapter {
   private readonly indexer: Indexer
@@ -55,7 +28,7 @@ export class OgStorageAdapter implements StorageAdapter {
   constructor(signer: ethers.Signer, indexerRpc: string = ZG.INDEXER_RPC) {
     this.signer = signer
     this.indexer = new Indexer(indexerRpc)
-    proxyNodeUrls(this.indexer)
+    applyNodeProxy(this.indexer)
   }
 
   /** AES-256 encrypted upload of a File (browser) or in-memory bytes. */
@@ -74,12 +47,13 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    // Flaky 0G testnet RPC nodes often drop connections causing "Network Error".
-    // We wrap the upload in a retry loop.
+    // Smart retry: differentiate transient (network) vs permanent errors.
+    // Transient errors get up to 5 retries with exponential backoff.
+    // Permanent errors (malformed key, invalid file) fail immediately.
     let tx: unknown
     let upErr: unknown
-    let retries = 3
-    while (retries > 0) {
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       const [attemptTx, attemptErr] = (await (this.indexer as unknown as {
         upload: (
           b: unknown,
@@ -96,10 +70,21 @@ export class OgStorageAdapter implements StorageAdapter {
       upErr = attemptErr
       if (!upErr) break
       
-      retries--
-      if (retries > 0) {
-        console.warn(`0G upload failed, retrying... (${retries} attempts left)`, attemptErr)
-        await new Promise(r => setTimeout(r, 1500))
+      const errStr = String(upErr)
+      // Check if this is a transient error (network, timeout, connection reset)
+      // vs a permanent error (invalid key, malformed data, insufficient funds).
+      const isTransient =
+        /network|timeout|connection|reset|ECONNREFUSED|ETIMEDOUT|fetch failed|socket hang up/i.test(errStr)
+      
+      if (!isTransient) {
+        // Permanent error — don't waste time retrying.
+        throw new Error(errStr)
+      }
+      
+      if (attempt < maxRetries - 1) {
+        const backoffMs = Math.min(1500 * Math.pow(2, attempt), 12000)
+        console.warn(`0G upload failed (transient), retrying in ${backoffMs}ms... (${maxRetries - attempt - 1} attempts left)`, attemptErr)
+        await new Promise(r => setTimeout(r, backoffMs))
       }
     }
     
@@ -121,9 +106,6 @@ export class OgStorageAdapter implements StorageAdapter {
         opts: unknown,
       ) => Promise<Tuple<Blob>>
     }).downloadToBlob(rootHash, {
-      // proof: false skips Merkle re-verification for speed — the upload
-      // tx is already signed on-chain; full verification only needed for
-      // tamper-detection UX (the separate "Verify Integrity" button does that).
       proof: false,
       decryption: { symmetricKey: key },
     })) as Tuple<Blob>
@@ -162,27 +144,27 @@ export class OgStorageAdapter implements StorageAdapter {
   }
 
   /**
-   * Real integrity check: read the stored file header via peekHeader. A non-null
-   * header means 0G can still locate the file at this root hash; a null/err
-   * result means it is missing or the root does not resolve (tampered/pruned).
-   *
-   * This is a presence + header check rather than a full Merkle re-verification
-   * (downloads with proof:true already do that), but it is honest: the previous
-   * implementation always returned true after an 800ms sleep, which surfaced a
-   * false "verified" guarantee to the user.
+   * Full integrity check: downloads with proof:true so the 0G SDK
+   * re-verifies the Merkle proof against the stored root hash. This is a
+   * genuine tamper-detection check, not just a presence probe.
    */
   async verifyIntegrity(rootHash: string): Promise<boolean> {
     try {
-      const [header, headerErr] = (await (this.indexer as unknown as {
-        peekHeader: (root: string) => Promise<Tuple<unknown>>
-      }).peekHeader(rootHash)) as Tuple<unknown>
-      if (headerErr) {
-        // On testnet, transient node errors are common; surface as "unverified"
-        // rather than a hard failure so the user is told the truth.
-        console.warn('0G integrity check error (root may be unavailable):', headerErr)
+      // Download with proof:true to force Merkle re-verification.
+      // If the file has been tampered with or pruned, this will fail.
+      const [, err] = (await (this.indexer as unknown as {
+        downloadToBlob: (
+          root: string,
+          opts: unknown,
+        ) => Promise<Tuple<unknown>>
+      }).downloadToBlob(rootHash, {
+        proof: true,
+      })) as Tuple<unknown>
+      if (err) {
+        console.warn('0G integrity check failed (file may be tampered or unavailable):', err)
         return false
       }
-      return header != null
+      return true
     } catch (e) {
       console.warn('0G integrity check error:', e)
       return false

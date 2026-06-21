@@ -7,7 +7,9 @@ import {
 } from '@/lib/og/types'
 
 function asString(v: unknown, fallback = ''): string {
-  return typeof v === 'string' ? v : v == null ? fallback : String(v)
+  if (typeof v === 'string') return v
+  if (v == null) return fallback
+  return String(v)
 }
 function asArray<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : []
