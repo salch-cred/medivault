@@ -29,6 +29,16 @@ const STAGE_LABEL: Record<Stage, string> = {
   done: 'Saved to your vault',
 }
 
+const DONE_ICON_INITIAL = { opacity: 0, scale: 0.8 }
+const DONE_ICON_ANIMATE = { opacity: 1, scale: 1 }
+const DONE_ICON_TRANSITION = { duration: 0.3 }
+const LABEL_INITIAL = { opacity: 0, y: 4 }
+const LABEL_ANIMATE = { opacity: 1, y: 0 }
+const LABEL_EXIT = { opacity: 0, y: -4 }
+const LABEL_TRANSITION = { duration: 0.2 }
+const PROGRESS_INITIAL = { opacity: 0 }
+const PROGRESS_ANIMATE = { opacity: 1 }
+
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
   const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
@@ -46,7 +56,6 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         return
       }
 
-      // Animate the progress bar forward slowly during blockchain waits
       let tickInterval: ReturnType<typeof setInterval> | null = null
       const startTick = (from: number, to: number, durationMs = 45000) => {
         if (tickInterval) clearInterval(tickInterval)
@@ -90,18 +99,15 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setStage('encrypting')
         setPct(65)
 
-        // Ensure the auto-wallet has enough gas for the 0G upload.
         const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
         const balance = await provider.getBalance(autoWalletAddress!)
         if (balance === 0n) {
           throw new Error('Insufficient 0G gas! Please click "Fund Auto-Wallet" in the status panel on the right.')
         }
 
-        // Derive a per-record AES key so each upload uses a distinct key.
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
 
-        // Upload document and summary in parallel — saves 30-60s vs sequential
         startTick(65, 88, 30000)
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
         const [{ rootHash, txHash }, { rootHash: summaryRootHash }] = await Promise.all([
@@ -123,7 +129,6 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           recordKeySalt: saltToHex(salt),
           createdAt: new Date().toISOString(),
         }
-        // Fire KV index write and UI update in parallel — don't block on slow KV write
         void index!.put(meta).catch(e => console.warn('KV index write failed:', e))
         addRecord(meta, summary)
         stopTick(100)
@@ -196,7 +201,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           {busy ? (
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           ) : stage === 'done' ? (
-            <motion.div initial= opacity: 0, scale: 0.8  animate= opacity: 1, scale: 1  transition= duration: 0.3 >
+            <motion.div initial={DONE_ICON_INITIAL} animate={DONE_ICON_ANIMATE} transition={DONE_ICON_TRANSITION}>
               <FileCheck2 className="h-8 w-8 text-emerald-500" />
             </motion.div>
           ) : (
@@ -205,10 +210,10 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           <AnimatePresence mode="wait">
             <motion.p
               key={stage}
-              initial= opacity: 0, y: 4 
-              animate= opacity: 1, y: 0 
-              exit= opacity: 0, y: -4 
-              transition= duration: 0.2 
+              initial={LABEL_INITIAL}
+              animate={LABEL_ANIMATE}
+              exit={LABEL_EXIT}
+              transition={LABEL_TRANSITION}
               className="mt-3 font-medium"
             >
               {busy || stage === 'done' ? STAGE_LABEL[stage] : 'Drop a file or click to upload'}
@@ -220,7 +225,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         </motion.div>
 
         {busy || stage === 'done' ? (
-          <motion.div initial= opacity: 0  animate= opacity: 1 >
+          <motion.div initial={PROGRESS_INITIAL} animate={PROGRESS_ANIMATE}>
             <Progress value={pct} />
           </motion.div>
         ) : null}
