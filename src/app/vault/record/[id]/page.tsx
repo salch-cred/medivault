@@ -16,6 +16,17 @@ import {
   RefreshCw,
   CloudUpload,
   CheckCircle2,
+  Download,
+  Clock,
+  History,
+  HardDrive,
+  Hash,
+  Copy,
+  Check,
+  CalendarDays,
+  Syringe,
+  ClipboardList,
+  Leaf,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConnectGate } from '@/components/connect-gate'
@@ -30,7 +41,8 @@ import { Disclaimer } from '@/components/disclaimer'
 import { DocTypeIcon } from '@/components/doc-type-icon'
 import { useVault } from '@/lib/store'
 import { DOC_TYPE_LABELS, type ExtractionResult, type RecordMeta } from '@/lib/og/types'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash } from '@/lib/utils'
+import { storageScanUrl } from '@/lib/og/config'
 
 const FADE_UP_INITIAL = { opacity: 0, y: 12 }
 const FADE_IN_INITIAL = { opacity: 0 }
@@ -52,8 +64,25 @@ function RecordView({ meta }: { meta: RecordMeta }) {
   const [docStatus, setDocStatus] = useState<string | null>(null)
   const [loadingDoc, setLoadingDoc] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
+  const [fileSize, setFileSize] = useState<number | null>(getCachedOriginal(meta.id)?.byteLength ?? null)
+  const [copiedHash, setCopiedHash] = useState(false)
+  const [, setNowTick] = useState(0)
 
   const backupState = uploadStatus[meta.id]
+  const storageLabel =
+    backupState === 'pending' ? 'Backing up to 0G…' : backupState === 'failed' ? 'Backup incomplete' : 'Stored on 0G'
+
+  // Re-render every 30s so relative timestamps stay fresh.
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 30_000)
+    return () => clearInterval(t)
+  }, [])
+
+  function copyHash(h: string) {
+    navigator.clipboard.writeText(h)
+    setCopiedHash(true)
+    setTimeout(() => setCopiedHash(false), 1500)
+  }
 
   async function fetchSummary() {
     setSummaryFailed(false)
@@ -130,6 +159,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     const cached = getCachedOriginal(meta.id)
     if (cached) {
       setDocText(new TextDecoder().decode(cached))
+      setFileSize(cached.byteLength)
       return
     }
     const recKey = await getRecordKey(meta)
@@ -141,6 +171,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
         setDocStatus(m),
       )
       setDocText(new TextDecoder().decode(bytes))
+      setFileSize(bytes.byteLength)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg.toLowerCase().includes('file not found') || /no locations|not found/i.test(msg)) {
@@ -151,6 +182,45 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     } finally {
       setLoadingDoc(false)
       setDocStatus(null)
+    }
+  }
+
+  async function saveOriginalFile() {
+    if (!storage) return
+    let bytes = getCachedOriginal(meta.id)
+    if (!bytes) {
+      const recKey = await getRecordKey(meta)
+      if (!recKey) return
+      setLoadingDoc(true)
+      setDocStatus('Fetching original from 0G…')
+      try {
+        bytes = await storage.downloadDecrypted(meta.rootHash, recKey, (m) => setDocStatus(m))
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        toast.error(msg || 'Could not download original')
+        setLoadingDoc(false)
+        setDocStatus(null)
+        return
+      }
+      setLoadingDoc(false)
+      setDocStatus(null)
+    }
+    if (!bytes) return
+    setFileSize(bytes.byteLength)
+    try {
+      const blob = new Blob([bytes])
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const safe = (meta.title || 'medivault-record').replace(/[^\w.-]+/g, '_')
+      a.download = `${safe}.txt`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success('Original file downloaded')
+    } catch {
+      toast.error('Download failed')
     }
   }
 
@@ -172,7 +242,10 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               <h1 className="text-2xl font-bold">{meta.title}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{DOC_TYPE_LABELS[meta.docType]}</Badge>
-                <span className="text-sm text-muted-foreground">{formatDate(meta.date)}</span>
+                <span className="text-sm text-muted-foreground">{formatDateTime(meta.date)}</span>
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" /> Added {formatTimeAgoExact(meta.createdAt)}
               </div>
               <div className="mt-2">
                 <EncryptedBadge rootHash={meta.rootHash} />
@@ -180,9 +253,13 @@ function RecordView({ meta }: { meta: RecordMeta }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 print:hidden">
+            <Button onClick={saveOriginalFile} disabled={loadingDoc} variant="outline">
+              {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Download original
+            </Button>
             <Button onClick={() => window.print()} variant="outline">
               <Printer className="h-4 w-4" />
-              Download PDF
+              Export PDF
             </Button>
             <Button onClick={verify} disabled={verifying} variant="outline">
               {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
@@ -208,6 +285,76 @@ function RecordView({ meta }: { meta: RecordMeta }) {
             </Button>
           </div>
         ) : null}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <HardDrive className="h-4 w-4 text-primary" /> Record details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" /> Document date</span>
+                <span className="text-right font-medium">{formatDateTime(meta.date)}</span>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Clock className="h-3.5 w-3.5" /> Added to vault</span>
+                <span className="text-right font-medium">{formatTimeAgoExact(meta.createdAt)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-muted-foreground"><CloudUpload className="h-3.5 w-3.5" /> Storage</span>
+                <Badge variant={backupState === 'failed' ? 'destructive' : 'secondary'}>{storageLabel}</Badge>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-muted-foreground"><FileText className="h-3.5 w-3.5" /> File size</span>
+                <span className="text-right font-medium">{fileSize != null ? formatBytes(fileSize) : 'Open original to measure'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Hash className="h-3.5 w-3.5" /> 0G root hash</span>
+                <span className="flex items-center gap-1.5">
+                  <a href={storageScanUrl(meta.rootHash)} target="_blank" rel="noreferrer" className="font-mono text-xs text-primary underline">{shortHash(meta.rootHash, 8, 6)}</a>
+                  <button onClick={() => copyHash(meta.rootHash)} className="text-muted-foreground hover:text-foreground">{copiedHash ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>
+                </span>
+              </div>
+              {meta.summaryRootHash ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5 text-muted-foreground"><Hash className="h-3.5 w-3.5" /> Summary hash</span>
+                  <a href={storageScanUrl(meta.summaryRootHash)} target="_blank" rel="noreferrer" className="font-mono text-xs text-primary underline">{shortHash(meta.summaryRootHash, 8, 6)}</a>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <History className="h-4 w-4 text-primary" /> Activity timeline
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ol className="relative space-y-4 border-l border-border pl-4">
+                <li className="relative">
+                  <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                  <p className="text-sm font-medium">Added to your vault</p>
+                  <p className="text-xs text-muted-foreground">{formatTimeAgoExact(meta.createdAt)}</p>
+                </li>
+                {meta.date ? (
+                  <li className="relative">
+                    <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-muted-foreground/50" />
+                    <p className="text-sm font-medium">Document dated</p>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(meta.date)}</p>
+                  </li>
+                ) : null}
+                <li className="relative">
+                  <span className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ${backupState === 'failed' ? 'bg-red-500' : backupState === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <p className="text-sm font-medium">{backupState === 'failed' ? 'Backup incomplete' : backupState === 'pending' ? 'Backing up to 0G…' : 'Secured on 0G network'}</p>
+                  <p className="text-xs text-muted-foreground">{backupState === 'pending' ? 'In progress' : backupState === 'failed' ? 'Needs retry' : 'Encrypted & distributed across storage nodes'}</p>
+                </li>
+              </ol>
+            </CardContent>
+          </Card>
+        </div>
 
         {verifying && verifyStatus ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -350,6 +497,59 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                     </CardContent>
                   </Card>
                 </div>
+
+                {summary.allergies?.length ? (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Syringe className="h-4 w-4 text-primary" /> Allergies
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap gap-2">
+                      {summary.allergies.map((a, i) => (
+                        <Badge key={i} variant="warning">{a}</Badge>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {summary.remedies?.length ? (
+                  <Card className="border-emerald-200">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base text-emerald-700">
+                        <Leaf className="h-4 w-4" /> Suggested remedies & self-care
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="list-disc space-y-1.5 pl-5 text-sm">
+                        {summary.remedies.map((r, i) => (
+                          <li key={i}>{r}</li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {summary.followUps?.length ? (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <ClipboardList className="h-4 w-4 text-primary" /> Follow-ups
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {summary.followUps.map((f, i) => (
+                        <div key={i} className="flex items-start justify-between gap-3 rounded-lg border p-2.5">
+                          <div>
+                            <p className="font-medium">{f.action}</p>
+                            {f.byDate ? <p className="text-xs text-muted-foreground">By {formatDate(f.byDate)}</p> : null}
+                          </div>
+                          <Badge variant={f.priority === 'high' ? 'destructive' : f.priority === 'medium' ? 'warning' : 'secondary'} className="capitalize">{f.priority}</Badge>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
               </motion.div>
             </TabsContent>
 
@@ -358,20 +558,31 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 <Card>
                   <CardContent className="space-y-3 p-4">
                     {docText === null ? (
-                      <>
+                      <div className="flex flex-wrap gap-2">
                         <Button onClick={viewOriginal} disabled={loadingDoc} variant="outline">
                           {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                           Download & decrypt original
                         </Button>
-                        {loadingDoc && docStatus ? (
-                          <p className="text-xs text-muted-foreground">{docStatus}</p>
-                        ) : null}
-                      </>
+                        <Button onClick={saveOriginalFile} disabled={loadingDoc} variant="outline">
+                          <Download className="h-4 w-4" /> Save file
+                        </Button>
+                      </div>
                     ) : (
-                      <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
-                        {docText || '(empty document)'}
-                      </pre>
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground">{fileSize != null ? `${formatBytes(fileSize)} decrypted locally` : 'Decrypted locally'}</p>
+                          <Button onClick={saveOriginalFile} variant="outline" size="sm">
+                            <Download className="h-4 w-4" /> Save file
+                          </Button>
+                        </div>
+                        <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
+                          {docText || '(empty document)'}
+                        </pre>
+                      </>
                     )}
+                    {loadingDoc && docStatus ? (
+                      <p className="text-xs text-muted-foreground">{docStatus}</p>
+                    ) : null}
                     <p className="text-xs text-muted-foreground">
                       Decrypted locally with your wallet-derived key. Binary files may not render as text.
                     </p>
@@ -398,6 +609,9 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                   {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                   Decrypt original
                 </Button>
+                <Button onClick={saveOriginalFile} disabled={loadingDoc} variant="outline" size="sm">
+                  <Download className="h-4 w-4" /> Save file
+                </Button>
               </div>
               {loadingDoc && docStatus ? (
                 <p className="text-xs text-amber-800">{docStatus}</p>
@@ -423,8 +637,9 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 <p className="text-sm font-semibold text-neutral-600 mt-1 uppercase tracking-widest">Official Medical Record</p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-bold text-black">Date: {formatDate(meta.date)}</p>
+                <p className="text-sm font-bold text-black">Date: {formatDateTime(meta.date)}</p>
                 <p className="text-sm text-black">Type: {DOC_TYPE_LABELS[meta.docType]}</p>
+                <p className="text-sm text-black">Added: {formatDateTime(meta.createdAt)}</p>
               </div>
             </div>
             <h2 className="mt-6 text-2xl font-bold text-black">{meta.title}</h2>
