@@ -3,6 +3,7 @@
 import { Toaster } from '@/components/ui/sonner'
 import { createWeb3Modal, defaultConfig } from '@web3modal/ethers/react'
 import { ZG } from '@/lib/og/config'
+import { AutoConnectManager } from '@/components/auto-connect-manager'
 
 // Use a demo project ID. The user should replace this in production.
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'b56e18d47c72ab683b10814fe9495694'
@@ -43,8 +44,6 @@ createWeb3Modal({
     '--w3m-color-mix-strength': 20
   }
 })
-
-import { AutoConnectManager } from '@/components/auto-connect-manager'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
