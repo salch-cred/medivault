@@ -19,6 +19,10 @@ import { Disclaimer } from '@/components/disclaimer'
 import { DOC_TYPE_LABELS } from '@/lib/og/types'
 import { formatDate, shortHash } from '@/lib/utils'
 
+const FADE_UP_INITIAL = { opacity: 0, y: 12 }
+const FADE_ANIMATE = { opacity: 1, y: 0 }
+const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
+
 export default function SharedRecordPage() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -131,8 +135,8 @@ export default function SharedRecordPage() {
       </div>
 
       <motion.div
-        initial= opacity: 0, y: 12 
-        animate= opacity: 1, y: 0 
+        initial={FADE_UP_INITIAL}
+        animate={FADE_ANIMATE}
         className="flex flex-wrap items-start justify-between gap-4"
       >
         <div className="flex items-start gap-3">
@@ -327,7 +331,7 @@ export default function SharedRecordPage() {
       {summary && (
         <div className="hidden print:block print:bg-white print:text-black">
           {/* Header section with a clean, classic medical look */}
-          <div className="mb-8 border-b-4 border-neutral-900 pb-6" style= pageBreakAfter: 'avoid' >
+          <div className="mb-8 border-b-4 border-neutral-900 pb-6" style={PRINT_HEADER_STYLE}>
             <div className="flex justify-between items-end">
               <div>
                 <h1 className="text-4xl font-black text-black tracking-tight uppercase">MediVault</h1>
