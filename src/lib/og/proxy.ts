@@ -110,6 +110,13 @@ async function orderTrustedBySync(trusted: any[]): Promise<any[]> {
 let shardedCache: { at: number; value: any } | null = null
 const SHARDED_TTL_MS = 8000
 
+// Invalidate the sharded-node cache. Called when an upload times out waiting for
+// a lagging node to sync, so the next attempt re-polls logSyncHeight and can
+// pick a fresher node (a previously-stalled node sorts to the bottom).
+export function clearShardedCache(): void {
+  shardedCache = null
+}
+
 export function applyNodeProxy(indexer: any): void {
   if (typeof window === 'undefined') return
   if (!indexer || indexer.__medivaultNodeProxyApplied) return

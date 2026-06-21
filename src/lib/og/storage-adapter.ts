@@ -16,12 +16,39 @@ import {
   Indexer,
 } from '@0gfoundation/0g-storage-ts-sdk'
 import { ZG } from './config'
-import { applyNodeProxy } from './proxy'
+import { applyNodeProxy, clearShardedCache } from './proxy'
 import type { StorageAdapter } from './adapters'
 
 type Tuple<T> = [T, unknown]
 
 type ProgressFn = (message: string) => void
+
+// Marker error so we can distinguish our own upload-stall timeout from real
+// errors thrown by the SDK.
+const SYNC_TIMEOUT_MARKER = 'MEDIVAULT_SYNC_TIMEOUT'
+
+// Max time to wait for a single SDK upload() (dominated by the storage node
+// log-sync). The SDK's waitForLogEntry() loops forever, so we must bound it.
+const SYNC_TIMEOUT_MS = 70_000
+// How many times we re-select a fresher node after a sync stall.
+const MAX_SYNC_TIMEOUTS = 2
+
+/** Reject with a marker error if `p` doesn't settle within `ms`. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(SYNC_TIMEOUT_MARKER)), ms)
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e)
+      },
+    )
+  })
+}
 
 // 0G SDK upload() positional signature (typings can trail the runtime API):
 //   upload(file, blockchainRpc, signer, uploadOpts?, retryOpts?, txOpts?)
@@ -179,15 +206,18 @@ export class OgStorageAdapter implements StorageAdapter {
   }
 
   /**
-   * Upload a prepared blob through the 0G SDK with smart, gas-aware retries.
+   * Upload a prepared blob through the 0G SDK with smart, gas-aware retries and
+   * a bounded wait for storage-node sync.
    *
-   * Why explicit gas handling: the SDK submits the Flow `submit` tx at the
-   * provider's suggested gasPrice when no gasPrice is supplied. Repeated
-   * attempts therefore reuse the same (latest) nonce at the same floor price,
-   * so the first attempt sticks in the mempool and every retry is rejected
-   * with "replacement fee too low" / REPLACEMENT_UNDERPRICED. We first clear
-   * any already-stuck nonce, then start above floor (faster inclusion) and
-   * escalate each retry (>=110% is required to replace a pending tx).
+   * Two independent failure modes are handled:
+   *  - Stuck-nonce / underpriced submit tx: we clear the stuck nonce, start
+   *    above the gas floor, and escalate each retry (>=110% replaces a pending
+   *    tx).
+   *  - Storage-node sync stall: the SDK's waitForLogEntry() loops forever when
+   *    a selected node lags chain head. We bound each upload() with a timeout,
+   *    bust the node cache to re-evaluate sync heights, and retry on a fresher
+   *    node. The retry's findExistingFileInfo skips re-submission once any node
+   *    has synced the entry, so it usually costs no extra storage fee.
    */
   private async uploadWithRetry(
     blob: unknown,
@@ -197,27 +227,63 @@ export class OgStorageAdapter implements StorageAdapter {
     // Pre-flight: unstick any leftover pending tx so the SDK gets a clean nonce.
     await this.clearStuckNonce()
 
+    const onProgress = (uploadOpts as { onProgress?: ProgressFn } | undefined)
+      ?.onProgress
+
     const floor = await this.networkGasPrice()
     // First attempt: ~2x floor for fast (often single-block) inclusion.
     let gasPrice = floor !== undefined ? (floor * 200n) / 100n : undefined
 
-    const maxRetries = 6
+    const maxRetries = 8
+    let syncTimeouts = 0
     let tx: { txHash?: string } | string | undefined
     let lastErr: unknown
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const txOpts = gasPrice !== undefined ? { gasPrice } : undefined
 
-      const [attemptTx, attemptErr] = (await (
-        this.indexer as unknown as { upload: SdkUpload }
-      ).upload(
-        blob,
-        ZG.RPC_URL,
-        this.signer,
-        uploadOpts,
-        undefined,
-        txOpts,
-      )) as Tuple<{ txHash?: string } | string>
+      let attemptTx: { txHash?: string } | string | undefined
+      let attemptErr: unknown
+      try {
+        const res = (await withTimeout(
+          (this.indexer as unknown as { upload: SdkUpload }).upload(
+            blob,
+            ZG.RPC_URL,
+            this.signer,
+            uploadOpts,
+            undefined,
+            txOpts,
+          ),
+          SYNC_TIMEOUT_MS,
+        )) as Tuple<{ txHash?: string } | string>
+        attemptTx = res[0]
+        attemptErr = res[1]
+      } catch (e) {
+        if (e instanceof Error && e.message === SYNC_TIMEOUT_MARKER) {
+          // The storage node we're waiting on is lagging chain head. Re-select.
+          syncTimeouts++
+          clearShardedCache() // force re-poll of node logSyncHeight
+          if (syncTimeouts > MAX_SYNC_TIMEOUTS) {
+            throw new Error(
+              'The 0G storage nodes are lagging right now and did not sync your upload in time. Your submission transaction is already on-chain -- please try again in a few minutes once the network catches up.',
+            )
+          }
+          console.warn(
+            `0G upload stalled waiting for storage node sync; re-selecting a fresher node (sync retry ${syncTimeouts}/${MAX_SYNC_TIMEOUTS}).`,
+          )
+          onProgress?.(
+            'Storage nodes are lagging \u2014 switching to a fresher node and retrying\u2026',
+          )
+          // The abandoned attempt already submitted; clean up any nonce gap and
+          // retry without escalating gas (this isn't a fee problem).
+          await this.clearStuckNonce()
+          await new Promise((r) => setTimeout(r, 1500))
+          continue
+        }
+        // A genuine thrown error -- fall through to the tuple-error handling.
+        attemptErr = e
+        attemptTx = undefined
+      }
 
       tx = attemptTx
       lastErr = attemptErr
