@@ -23,6 +23,8 @@ type Tuple<T> = [T, unknown]
 
 type ProgressFn = (message: string) => void
 
+type ReadOpts = { expectExists?: boolean }
+
 // Marker error so we can distinguish our own upload-stall timeout from real
 // errors thrown by the SDK.
 const SYNC_TIMEOUT_MARKER = 'MEDIVAULT_SYNC_TIMEOUT'
@@ -33,7 +35,7 @@ const SYNC_TIMEOUT_MS = 70_000
 // How many times we re-select a fresher node after a sync stall.
 const MAX_SYNC_TIMEOUTS = 2
 
-// ── Read-path propagation retry ─────────────────────────────────────
+// ── Read-path propagation retry ───────────────────
 // Right after a successful upload the file is on-chain and on the storage node,
 // but the indexer's getFileLocations can briefly return empty / "file not
 // found" until the node finishes syncing the submission block and the indexer
@@ -49,7 +51,12 @@ const NOT_FOUND_RE =
 const recentUploads = new Map<string, number>()
 const RECENT_UPLOAD_WINDOW_MS = 10 * 60_000
 const READ_RETRY_INTERVAL_MS = 6_000
+// Shared links poll faster so the recipient sees the record the moment it
+// propagates, rather than waiting out a long fixed interval.
+const READ_RETRY_INTERVAL_EXPECT_MS = 3_000
 const READ_RETRY_ATTEMPTS_RECENT = 16 // ~90s of patient retries
+// Shared/expected reads: ~90s of fast, patient retries (30 x 3s).
+const READ_RETRY_ATTEMPTS_EXPECT = 30
 const READ_RETRY_ATTEMPTS_DEFAULT = 2 // quick fail for old/missing roots
 
 function markRecentUpload(rootHash?: string): void {
@@ -120,23 +127,33 @@ export class OgStorageAdapter implements StorageAdapter {
   }
 
   /**
-   * Retry a 0G read while a just-uploaded file is still propagating to the
-   * indexer. Only "not found / no locations" errors are retried; genuine
-   * errors (tampered proof, wrong key, malformed) surface immediately.
+   * Retry a 0G read while a file is still propagating to the indexer. Only
+   * "not found / no locations" errors are retried; genuine errors (tampered
+   * proof, wrong key, malformed) surface immediately.
    *
-   * Recently-uploaded roots get a long budget (the file WILL appear once the
-   * node syncs + the indexer reflects it); all other roots fail fast so old or
-   * genuinely-missing records don't freeze the UI for 90s.
+   * A read is treated as "patient" (long budget) when EITHER the root was
+   * uploaded this session OR the caller passes expectExists:true (e.g. a share
+   * link, which by definition points to a file the sender just uploaded). All
+   * other roots fail fast so old or genuinely-missing records don't freeze the
+   * UI.
    */
   private async withReadRetry<T>(
     rootHash: string,
     op: () => Promise<T>,
     onProgress?: ProgressFn,
+    opts?: ReadOpts,
   ): Promise<T> {
+    const expectExists = opts?.expectExists === true
     const recent = wasRecentlyUploaded(rootHash)
-    const maxAttempts = recent
-      ? READ_RETRY_ATTEMPTS_RECENT
-      : READ_RETRY_ATTEMPTS_DEFAULT
+    const patient = recent || expectExists
+    const maxAttempts = expectExists
+      ? READ_RETRY_ATTEMPTS_EXPECT
+      : recent
+        ? READ_RETRY_ATTEMPTS_RECENT
+        : READ_RETRY_ATTEMPTS_DEFAULT
+    const intervalMs = expectExists
+      ? READ_RETRY_INTERVAL_EXPECT_MS
+      : READ_RETRY_INTERVAL_MS
     let lastErr: unknown
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -145,17 +162,17 @@ export class OgStorageAdapter implements StorageAdapter {
         lastErr = e
         if (!NOT_FOUND_RE.test(String(e))) throw e // real error -> surface now
         if (attempt < maxAttempts - 1) {
-          if (recent) {
+          if (patient) {
             onProgress?.(
-              `Your file is still syncing across 0G storage nodes… retrying (${attempt + 1}/${maxAttempts - 1})`,
+              `Still syncing across 0G storage nodes… retrying (${attempt + 1}/${maxAttempts - 1})`,
             )
           } else {
             onProgress?.('Looking for the file on 0G…')
           }
           console.warn(
-            `0G read: "${rootHash}" not yet locatable (attempt ${attempt + 1}/${maxAttempts}); ${recent ? 'recently uploaded -- waiting for propagation' : 'not a recent upload -- failing fast'}.`,
+            `0G read: "${rootHash}" not yet locatable (attempt ${attempt + 1}/${maxAttempts}); ${patient ? 'expected to exist -- waiting for propagation' : 'not a recent upload -- failing fast'}.`,
           )
-          await new Promise((r) => setTimeout(r, READ_RETRY_INTERVAL_MS))
+          await new Promise((r) => setTimeout(r, intervalMs))
         }
       }
     }
@@ -474,6 +491,7 @@ export class OgStorageAdapter implements StorageAdapter {
     rootHash: string,
     key: Uint8Array,
     onProgress?: ProgressFn,
+    opts?: ReadOpts,
   ): Promise<Uint8Array> {
     return this.withReadRetry(
       rootHash,
@@ -492,6 +510,7 @@ export class OgStorageAdapter implements StorageAdapter {
         return new Uint8Array(buf)
       },
       onProgress,
+      opts,
     )
   }
 
@@ -529,6 +548,7 @@ export class OgStorageAdapter implements StorageAdapter {
   async verifyIntegrity(
     rootHash: string,
     onProgress?: ProgressFn,
+    opts?: ReadOpts,
   ): Promise<boolean> {
     try {
       await this.withReadRetry(
@@ -547,6 +567,7 @@ export class OgStorageAdapter implements StorageAdapter {
           return true
         },
         onProgress,
+        opts,
       )
       return true
     } catch (e) {
@@ -559,14 +580,19 @@ export class OgStorageAdapter implements StorageAdapter {
   }
 
   /** null = plaintext, 'v1' = aes256, 'v2' = ecies. */
-  async detectMode(rootHash: string): Promise<unknown> {
-    return this.withReadRetry(rootHash, async () => {
-      const [header, headerErr] = (await (this.indexer as unknown as {
-        peekHeader: (root: string) => Promise<Tuple<unknown>>
-      }).peekHeader(rootHash)) as Tuple<unknown>
-      if (headerErr) throw new Error(String(headerErr))
-      return header
-    })
+  async detectMode(rootHash: string, opts?: ReadOpts): Promise<unknown> {
+    return this.withReadRetry(
+      rootHash,
+      async () => {
+        const [header, headerErr] = (await (this.indexer as unknown as {
+          peekHeader: (root: string) => Promise<Tuple<unknown>>
+        }).peekHeader(rootHash)) as Tuple<unknown>
+        if (headerErr) throw new Error(String(headerErr))
+        return header
+      },
+      undefined,
+      opts,
+    )
   }
 
   /** Download ECIES ciphertext from 0G and decrypt using private key. */
@@ -574,6 +600,7 @@ export class OgStorageAdapter implements StorageAdapter {
     rootHash: string,
     privateKey: string,
     onProgress?: ProgressFn,
+    opts?: ReadOpts,
   ): Promise<Uint8Array> {
     return this.withReadRetry(
       rootHash,
@@ -592,6 +619,10 @@ export class OgStorageAdapter implements StorageAdapter {
         return new Uint8Array(buf)
       },
       onProgress,
+      // A share link always points to a file the sender just uploaded, so the
+      // recipient (who has no local "recent upload" record) must still wait
+      // patiently for it to propagate rather than failing fast after 2 tries.
+      { expectExists: true, ...opts },
     )
   }
 }

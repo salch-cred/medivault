@@ -32,8 +32,10 @@ export default function SharedRecordPage() {
   const [loading, setLoading] = useState(true)
   const [decryptedData, setDecryptedData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
 
   useEffect(() => {
+    let active = true
     async function decryptRecord() {
       if (!storage || !autoWalletSigner) {
         setLoading(false)
@@ -43,51 +45,47 @@ export default function SharedRecordPage() {
       try {
         const wallet = autoWalletSigner as ethers.Wallet
         const privateKey = wallet.privateKey
-
         if (!privateKey) {
           throw new Error('Auto-Wallet private key not loaded')
         }
 
-        let bytes: Uint8Array | null = null
-        let retries = 30
-        let lastErr: any = null
-        
-        while (retries > 0) {
-          try {
-            bytes = await storage.downloadDecryptedShared(hash, privateKey)
-            break
-          } catch (e: any) {
-            lastErr = e
-            const msg = e.message?.toLowerCase() || ''
-            if (msg.includes('file not found') || msg.includes('no locations found')) {
-              retries--
-              if (retries > 0) {
-                // Wait 2 seconds before retrying to allow 0G network propagation
-                await new Promise(r => setTimeout(r, 2000))
-                continue
-              }
-            }
-            throw e // re-throw if different error or out of retries
-          }
-        }
-        
-        if (!bytes) throw lastErr
+        // downloadDecryptedShared is patient-by-default: it waits (with fast 3s
+        // polling, ~90s budget) for the just-shared file to propagate across the
+        // 0G indexer, reporting live status, instead of failing fast. No manual
+        // outer retry loop needed.
+        const bytes = await storage.downloadDecryptedShared(
+          hash,
+          privateKey,
+          (m) => {
+            if (active) setStatus(m)
+          },
+        )
 
         const payload = JSON.parse(new TextDecoder().decode(bytes))
-        setDecryptedData(payload)
+        if (active) setDecryptedData(payload)
       } catch (err: any) {
         console.error('Shared decryption failed:', err)
-        if (err.message?.toLowerCase().includes('file not found') || err.message?.toLowerCase().includes('no locations found')) {
-          setError('Document is still registering on the 0G network, or has been pruned. Please wait a moment or request the sender to re-share.')
+        if (!active) return
+        const msg = err?.message?.toLowerCase() || ''
+        if (
+          msg.includes('file not found') ||
+          msg.includes('no locations found') ||
+          msg.includes('not found') ||
+          msg.includes('no location')
+        ) {
+          setError('Document is still registering on the 0G network, or has been pruned. Please wait a moment or ask the sender to re-share.')
         } else {
-          setError(err.message || 'Could not decrypt shared record.')
+          setError(err?.message || 'Could not decrypt shared record.')
         }
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
     decryptRecord()
+    return () => {
+      active = false
+    }
   }, [hash, storage, autoWalletSigner])
 
   if (loading) {
@@ -95,7 +93,9 @@ export default function SharedRecordPage() {
       <div className="flex h-[50vh] flex-col items-center justify-center gap-3 text-center px-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <p className="text-sm font-semibold">Downloading & decrypting secure record...</p>
-        <p className="text-xs text-muted-foreground mt-2 max-w-[250px]">The 0G decentralized testnet can sometimes take up to 60 seconds to propagate new files. Please keep this page open.</p>
+        <p className="text-xs text-muted-foreground mt-2 max-w-[280px]">
+          {status || 'Securely fetching this record from the 0G decentralized network…'}
+        </p>
       </div>
     )
   }
@@ -131,8 +131,8 @@ export default function SharedRecordPage() {
       </div>
 
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial= opacity: 0, y: 12 
+        animate= opacity: 1, y: 0 
         className="flex flex-wrap items-start justify-between gap-4"
       >
         <div className="flex items-start gap-3">
@@ -327,7 +327,7 @@ export default function SharedRecordPage() {
       {summary && (
         <div className="hidden print:block print:bg-white print:text-black">
           {/* Header section with a clean, classic medical look */}
-          <div className="mb-8 border-b-4 border-neutral-900 pb-6" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+          <div className="mb-8 border-b-4 border-neutral-900 pb-6" style= pageBreakAfter: 'avoid' >
             <div className="flex justify-between items-end">
               <div>
                 <h1 className="text-4xl font-black text-black tracking-tight uppercase">MediVault</h1>
