@@ -492,4 +492,9 @@ export default function RecordDetailPage({ params }: { params: { id: string } })
           </p>
           <Button asChild variant="outline" className="mt-4">
             <Link href="/vault">Back to vault</Link>
-          </Button
+          </Button>
+        </div>
+      )}
+    </ConnectGate>
+  )
+}
