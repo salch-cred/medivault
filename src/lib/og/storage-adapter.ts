@@ -380,8 +380,8 @@ export class OgStorageAdapter implements StorageAdapter {
       ?.onProgress
 
     const floor = await this.networkGasPrice()
-    // First attempt: ~2x floor for fast (often single-block) inclusion.
-    let gasPrice = floor !== undefined ? (floor * 200n) / 100n : undefined
+    // First attempt: ~3x floor for fast (often next-block) inclusion on mainnet.
+    let gasPrice = floor !== undefined ? (floor * 300n) / 100n : undefined
 
     const maxRetries = 8
     let syncTimeouts = 0
@@ -500,7 +500,7 @@ export class OgStorageAdapter implements StorageAdapter {
         // Ensure we have a base price even if the first lookup failed.
         if (gasPrice === undefined) {
           const f = await this.networkGasPrice()
-          gasPrice = f !== undefined ? (f * 200n) / 100n : undefined
+          gasPrice = f !== undefined ? (f * 300n) / 100n : undefined
         } else {
           // ~1.6x per retry: comfortably above the 110% replacement threshold.
           gasPrice = (gasPrice * 160n) / 100n
