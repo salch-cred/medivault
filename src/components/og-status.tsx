@@ -40,7 +40,7 @@ export function OgStatus() {
 
   useEffect(() => {
     fetchBalance()
-    const interval = setInterval(fetchBalance, 10000)
+    const interval = setInterval(fetchBalance, 30000)
     return () => clearInterval(interval)
   }, [autoWalletAddress, autoWalletSigner, signer, address])
 

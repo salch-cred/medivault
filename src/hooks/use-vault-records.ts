@@ -9,10 +9,21 @@ export function useVaultRecords(): VaultRecord[] {
   const { records, summaries, loadSummary } = useVault()
 
   useEffect(() => {
-    for (const meta of records) {
-      if (!summaries[meta.id] && meta.summaryRootHash) {
-        void loadSummary(meta)
-      }
+    // Load summaries with limited concurrency (3 at a time) to avoid
+    // flooding the 0G indexer with simultaneous "Getting file locations"
+    // requests for every record at once.
+    const pending = records.filter(
+      (meta) => !summaries[meta.id] && meta.summaryRootHash
+    )
+    const CONCURRENCY = 3
+    let idx = 0
+    const runNext = (): void => {
+      if (idx >= pending.length) return
+      const meta = pending[idx++]
+      void loadSummary(meta).finally(runNext)
+    }
+    for (let i = 0; i < Math.min(CONCURRENCY, pending.length); i++) {
+      runNext()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records])
