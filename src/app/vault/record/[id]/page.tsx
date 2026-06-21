@@ -41,7 +41,7 @@ import { Disclaimer } from '@/components/disclaimer'
 import { DocTypeIcon } from '@/components/doc-type-icon'
 import { useVault } from '@/lib/store'
 import { DOC_TYPE_LABELS, type ExtractionResult, type RecordMeta } from '@/lib/og/types'
-import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash } from '@/lib/utils'
+import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash, fileKind, downloadFileName } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
 
 const FADE_UP_INITIAL = { opacity: 0, y: 12 }
@@ -52,6 +52,8 @@ const SCALE_ANIMATE = { opacity: 1, scale: 1 }
 const FAST_TRANSITION = { duration: 0.2 }
 const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
 
+type DocKind = 'text' | 'image' | 'pdf' | 'binary'
+
 function RecordView({ meta }: { meta: RecordMeta }) {
   const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal, uploadStatus, autoBackup } = useVault()
   const [summary, setSummary] = useState<ExtractionResult | undefined>(summaries[meta.id])
@@ -61,6 +63,8 @@ function RecordView({ meta }: { meta: RecordMeta }) {
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
   const [verified, setVerified] = useState<boolean | null>(null)
   const [docText, setDocText] = useState<string | null>(null)
+  const [docUrl, setDocUrl] = useState<string | null>(null)
+  const [docKind, setDocKind] = useState<DocKind | null>(null)
   const [docStatus, setDocStatus] = useState<string | null>(null)
   const [loadingDoc, setLoadingDoc] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
@@ -87,6 +91,13 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backupState, meta.id])
+
+  // Release any object URL we created for previews when leaving the page.
+  useEffect(() => {
+    return () => {
+      if (docUrl) URL.revokeObjectURL(docUrl)
+    }
+  }, [docUrl])
 
   function copyHash(h: string) {
     navigator.clipboard.writeText(h)
@@ -159,14 +170,33 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     }
   }
 
+  // Turn decrypted bytes into a preview: decode text inline, or build a typed
+  // object URL so PDFs/images open and download natively.
+  function presentBytes(bytes: Uint8Array) {
+    setFileSize(bytes.byteLength)
+    const kind = fileKind(meta.mimeType)
+    if (kind === 'text') {
+      setDocText(new TextDecoder().decode(bytes))
+      setDocUrl(null)
+      setDocKind('text')
+      return
+    }
+    const blob = new Blob([bytes as BlobPart], meta.mimeType ? { type: meta.mimeType } : undefined)
+    setDocUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(blob)
+    })
+    setDocText(null)
+    setDocKind(kind)
+  }
+
   async function viewOriginal() {
     if (!storage) return
     // Fast path: the original bytes were cached locally at upload time, so the
     // just-uploaded record renders instantly with zero network round-trips.
     const cached = getCachedOriginal(meta.id)
     if (cached) {
-      setDocText(new TextDecoder().decode(cached))
-      setFileSize(cached.byteLength)
+      presentBytes(cached)
       return
     }
     const recKey = await getRecordKey(meta)
@@ -177,8 +207,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
       const bytes = await storage.downloadDecrypted(meta.rootHash, recKey, (m) =>
         setDocStatus(m),
       )
-      setDocText(new TextDecoder().decode(bytes))
-      setFileSize(bytes.byteLength)
+      presentBytes(bytes)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg.toLowerCase().includes('file not found') || /no locations|not found/i.test(msg)) {
@@ -215,12 +244,11 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     if (!bytes) return
     setFileSize(bytes.byteLength)
     try {
-      const blob = new Blob([bytes as BlobPart])
+      const blob = new Blob([bytes as BlobPart], meta.mimeType ? { type: meta.mimeType } : undefined)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const safe = (meta.title || 'medivault-record').replace(/[^\w.-]+/g, '_')
-      a.download = `${safe}.txt`
+      a.download = downloadFileName(meta.title, meta.fileName, meta.mimeType)
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -229,6 +257,32 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     } catch {
       toast.error('Download failed')
     }
+  }
+
+  function OriginalPreview() {
+    if (docKind === 'image' && docUrl) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={docUrl} alt={meta.title} className="max-h-[480px] w-auto rounded-xl border" />
+    }
+    if (docKind === 'pdf' && docUrl) {
+      return (
+        <object data={docUrl} type="application/pdf" className="h-[480px] w-full rounded-xl border">
+          <a href={docUrl} target="_blank" rel="noreferrer" className="text-primary underline">Open PDF in a new tab</a>
+        </object>
+      )
+    }
+    if (docKind === 'binary' && docUrl) {
+      return (
+        <div className="rounded-xl bg-muted p-4 text-xs text-muted-foreground">
+          Preview isn’t available for this file type. <a href={docUrl} target="_blank" rel="noreferrer" className="text-primary underline">Open in a new tab</a> or use Save file.
+        </div>
+      )
+    }
+    return (
+      <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
+        {docText || '(empty document)'}
+      </pre>
+    )
   }
 
   return (
@@ -317,6 +371,12 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                 <span className="flex items-center gap-1.5 text-muted-foreground"><FileText className="h-3.5 w-3.5" /> File size</span>
                 <span className="text-right font-medium">{fileSize != null ? formatBytes(fileSize) : 'Open original to measure'}</span>
               </div>
+              {meta.fileName ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5 text-muted-foreground"><FileText className="h-3.5 w-3.5" /> Original file</span>
+                  <span className="max-w-[55%] truncate text-right font-medium" title={meta.fileName}>{meta.fileName}</span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 text-muted-foreground"><Hash className="h-3.5 w-3.5" /> 0G root hash</span>
                 <span className="flex items-center gap-1.5">
@@ -564,7 +624,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               <motion.div initial={FADE_IN_INITIAL} animate={FADE_ANIMATE} transition={FAST_TRANSITION} className="pt-4">
                 <Card>
                   <CardContent className="space-y-3 p-4">
-                    {docText === null ? (
+                    {docKind === null ? (
                       <div className="flex flex-wrap gap-2">
                         <Button onClick={viewOriginal} disabled={loadingDoc} variant="outline">
                           {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
@@ -582,16 +642,14 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                             <Download className="h-4 w-4" /> Save file
                           </Button>
                         </div>
-                        <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
-                          {docText || '(empty document)'}
-                        </pre>
+                        <OriginalPreview />
                       </>
                     )}
                     {loadingDoc && docStatus ? (
                       <p className="text-xs text-muted-foreground">{docStatus}</p>
                     ) : null}
                     <p className="text-xs text-muted-foreground">
-                      Decrypted locally with your wallet-derived key. Binary files may not render as text.
+                      Decrypted locally with your wallet-derived key. PDFs and images open in their original format.
                     </p>
                   </CardContent>
                 </Card>
@@ -623,11 +681,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               {loadingDoc && docStatus ? (
                 <p className="text-xs text-amber-800">{docStatus}</p>
               ) : null}
-              {docText !== null ? (
-                <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl bg-white p-4 text-xs text-neutral-900">
-                  {docText || '(empty document)'}
-                </pre>
-              ) : null}
+              {docKind !== null ? <OriginalPreview /> : null}
             </CardContent>
           </Card>
         )}

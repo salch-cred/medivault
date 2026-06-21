@@ -40,12 +40,14 @@ import { EncryptedBadge } from '@/components/encrypted-badge'
 import { Disclaimer } from '@/components/disclaimer'
 import { LabResultsTable } from '@/components/lab-results-table'
 import { DOC_TYPE_LABELS, type ExtractionResult } from '@/lib/og/types'
-import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash } from '@/lib/utils'
+import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash, fileKind, downloadFileName } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
 
 const FADE_UP_INITIAL = { opacity: 0, y: 12 }
 const FADE_ANIMATE = { opacity: 1, y: 0 }
 const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
+
+type DocKind = 'text' | 'image' | 'pdf' | 'binary'
 
 type SharedPayload = {
   title: string
@@ -58,6 +60,8 @@ type SharedPayload = {
   recordRootHash?: string
   recordKeySalt?: string | null
   recordKeyHex?: string
+  fileName?: string | null
+  mimeType?: string | null
 }
 
 export default function SharedRecordPage() {
@@ -75,6 +79,8 @@ export default function SharedRecordPage() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [docText, setDocText] = useState<string | null>(null)
+  const [docUrl, setDocUrl] = useState<string | null>(null)
+  const [docKind, setDocKind] = useState<DocKind | null>(null)
   const [docStatus, setDocStatus] = useState<string | null>(null)
   const [loadingDoc, setLoadingDoc] = useState(false)
   const [fileSize, setFileSize] = useState<number | null>(null)
@@ -85,6 +91,12 @@ export default function SharedRecordPage() {
     const t = setInterval(() => setNowTick((n) => n + 1), 30_000)
     return () => clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    return () => {
+      if (docUrl) URL.revokeObjectURL(docUrl)
+    }
+  }, [docUrl])
 
   function copyHash(h: string) {
     navigator.clipboard.writeText(h)
@@ -101,6 +113,10 @@ export default function SharedRecordPage() {
       }
 
       try {
+        // Warm up 0G node/indexer selection in parallel so the original-file
+        // fetch (if the user opens it) starts from a hot path.
+        void storage.prewarm?.()
+
         const wallet = autoWalletSigner as ethers.Wallet
         const privateKey = wallet.privateKey
         if (!privateKey) {
@@ -169,15 +185,30 @@ export default function SharedRecordPage() {
     setLoadingDoc(false)
     setDocStatus(null)
     setFileSize(bytes.byteLength)
-    setDocText(new TextDecoder().decode(bytes))
+
+    const mime = decryptedData.mimeType
+    const kind = fileKind(mime)
+    if (kind === 'text') {
+      setDocText(new TextDecoder().decode(bytes))
+      setDocUrl(null)
+      setDocKind('text')
+    } else {
+      const blob = new Blob([bytes as BlobPart], mime ? { type: mime } : undefined)
+      setDocUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(blob)
+      })
+      setDocText(null)
+      setDocKind(kind)
+    }
+
     if (saveToDisk) {
       try {
-        const blob = new Blob([bytes as BlobPart])
+        const blob = new Blob([bytes as BlobPart], mime ? { type: mime } : undefined)
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        const safe = (decryptedData.title || 'shared-record').replace(/[^\w.-]+/g, '_')
-        a.download = `${safe}.txt`
+        a.download = downloadFileName(decryptedData.title, decryptedData.fileName, mime)
         document.body.appendChild(a)
         a.click()
         a.remove()
@@ -187,6 +218,32 @@ export default function SharedRecordPage() {
         toast.error('Download failed')
       }
     }
+  }
+
+  function OriginalPreview() {
+    if (docKind === 'image' && docUrl) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={docUrl} alt={decryptedData?.title || 'Shared document'} className="max-h-[480px] w-auto rounded-xl border" />
+    }
+    if (docKind === 'pdf' && docUrl) {
+      return (
+        <object data={docUrl} type="application/pdf" className="h-[480px] w-full rounded-xl border">
+          <a href={docUrl} target="_blank" rel="noreferrer" className="text-primary underline">Open PDF in a new tab</a>
+        </object>
+      )
+    }
+    if (docKind === 'binary' && docUrl) {
+      return (
+        <div className="rounded-xl bg-muted p-4 text-xs text-muted-foreground">
+          Preview isn’t available for this file type. <a href={docUrl} target="_blank" rel="noreferrer" className="text-primary underline">Open in a new tab</a> or use Save file.
+        </div>
+      )
+    }
+    return (
+      <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
+        {docText || '(empty document)'}
+      </pre>
+    )
   }
 
   if (loading) {
@@ -318,7 +375,7 @@ export default function SharedRecordPage() {
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-1.5 text-muted-foreground"><FileText className="h-3.5 w-3.5" /> Original file</span>
-              <span className="text-right font-medium">{fileSize != null ? formatBytes(fileSize) : hasOriginal ? 'Available' : 'Summary only'}</span>
+              <span className="max-w-[55%] truncate text-right font-medium" title={decryptedData.fileName || undefined}>{decryptedData.fileName ? decryptedData.fileName : fileSize != null ? formatBytes(fileSize) : hasOriginal ? 'Available' : 'Summary only'}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-1.5 text-muted-foreground"><Hash className="h-3.5 w-3.5" /> Shared root hash</span>
@@ -547,7 +604,7 @@ export default function SharedRecordPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {docText === null ? (
+            {docKind === null ? (
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => loadOriginal(false)} disabled={loadingDoc} variant="outline">
                   {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
@@ -565,13 +622,11 @@ export default function SharedRecordPage() {
                     <Download className="h-4 w-4" /> Save file
                   </Button>
                 </div>
-                <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs">
-                  {docText || '(empty document)'}
-                </pre>
+                <OriginalPreview />
               </>
             )}
             {loadingDoc && docStatus ? <p className="text-xs text-muted-foreground">{docStatus}</p> : null}
-            <p className="text-xs text-muted-foreground">Decrypted locally with the key the sender shared. Binary files may not render as text.</p>
+            <p className="text-xs text-muted-foreground">Decrypted locally with the key the sender shared. PDFs and images open in their original format.</p>
           </CardContent>
         </Card>
       ) : null}
