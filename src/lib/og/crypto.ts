@@ -14,26 +14,22 @@ export const MASTER_SEED_MESSAGE =
   'and creates the background wallet that pays 0G gas fees. ' +
   'Only your wallet can reproduce these keys.\n\nVersion: 2'
 
-// The master-seed signature is the root secret. We keep it in memory and ALSO
-// mirror it into sessionStorage (NOT localStorage) so a page refresh in the
-// same tab does not force the user to sign again. sessionStorage is cleared
-// automatically when the tab is closed, so the secret never persists long-term,
-// and disconnect()/account-switch wipes it immediately via clearMasterSeed().
-const MASTER_SEED_STORAGE_PREFIX = 'medivault_seed_v2'
-
+// The master-seed signature is the root secret. We keep it ONLY in memory.
+// Previously it was stored in sessionStorage which exposed it to XSS attacks.
+// Now a page refresh will require the user to re-sign the wallet message,
+// which is a small UX cost for significantly better security.
 let cachedMasterSeed: string | null = null
-
-function seedStorageKey(address: string): string {
-  return address ? `${MASTER_SEED_STORAGE_PREFIX}:${address.toLowerCase()}` : MASTER_SEED_STORAGE_PREFIX
-}
 
 export function clearMasterSeed() {
   cachedMasterSeed = null
+
+  // Clean up any legacy sessionStorage entries from previous versions.
   try {
     if (typeof window !== 'undefined') {
+      const LEGACY_PREFIX = 'medivault_seed_v2'
       for (let i = sessionStorage.length - 1; i >= 0; i--) {
         const k = sessionStorage.key(i)
-        if (k && k.startsWith(MASTER_SEED_STORAGE_PREFIX)) sessionStorage.removeItem(k)
+        if (k && k.startsWith(LEGACY_PREFIX)) sessionStorage.removeItem(k)
       }
     }
   } catch {}
@@ -42,30 +38,10 @@ export function clearMasterSeed() {
 async function getMasterSeed(signer: ethers.Signer): Promise<string> {
   if (cachedMasterSeed) return cachedMasterSeed
 
-  let address = ''
-  try {
-    address = (await signer.getAddress()).toLowerCase()
-  } catch {}
-
-  // Reuse this tab's existing signature if present so a refresh doesn't trigger
-  // another wallet signature prompt. Bound to the address so switching accounts
-  // never reuses the wrong seed.
-  try {
-    if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem(seedStorageKey(address))
-      if (stored) {
-        cachedMasterSeed = stored
-        return stored
-      }
-    }
-  } catch {}
-
+  // The seed is no longer persisted to any storage. The user must re-sign on
+  // page refresh. This prevents XSS from exfiltrating the root secret via
+  // sessionStorage.
   cachedMasterSeed = await signer.signMessage(MASTER_SEED_MESSAGE)
-  try {
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(seedStorageKey(address), cachedMasterSeed)
-    }
-  } catch {}
   return cachedMasterSeed
 }
 
