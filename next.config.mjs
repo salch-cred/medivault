@@ -28,7 +28,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob: https:",
-      "connect-src 'self' https://evmrpc.0g.ai https://indexer-storage-turbo.0g.ai https://keyvalue.immanuel.co wss://0g-chat-relay.0g.ai https://*.peerjs.com wss://*.peerjs.com",
+      "connect-src 'self' https://evmrpc.0g.ai https://indexer-storage-turbo.0g.ai https://keyvalue.immanuel.co wss://0g-chat-relay.0g.ai https://*.peerjs.com wss://*.peerjs.com https://rpc.walletconnect.org https://relay.walletconnect.com wss://relay.walletconnect.com https://*.walletconnect.com wss://*.walletconnect.com",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",
