@@ -14,7 +14,7 @@ import Link from 'next/link'
 const ITEMS = [
   { icon: Link2, label: 'Chain', value: `${ZG.CHAIN_NAME} · ${ZG.CHAIN_ID}` },
   { icon: HardDrive, label: 'Storage indexer', value: 'mainnet' },
-  { icon: Database, label: 'KV index', value: '0G-KV mainnet' },
+  { icon: Database, label: 'KV index', value: 'Local + durable 0G pointer' },
   { icon: Cpu, label: 'AI compute', value: '0G Compute router' },
 ]
 
@@ -24,24 +24,24 @@ export function OgStatus() {
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const fetchBalance = async () => {
-    if (!autoWalletAddress) return
+    if (!autoWalletAddress || isRefreshing) return
     setIsRefreshing(true)
     try {
-      // Use authed provider so the RPC proxy accepts the request.
       const provider = await createAuthedProvider(signer ?? autoWalletSigner, address ?? autoWalletAddress, ZG.RPC_URL)
       const bal = await provider.getBalance(autoWalletAddress)
       setBalance(Number(ethers.formatEther(bal)).toFixed(4) + ' OG')
     } catch (e) {
-      console.error('Failed to fetch balance', e)
+      console.warn('Failed to fetch balance', e)
     } finally {
       setIsRefreshing(false)
     }
   }
 
   useEffect(() => {
-    fetchBalance()
-    const interval = setInterval(fetchBalance, 30000)
+    void fetchBalance()
+    const interval = setInterval(() => void fetchBalance(), 60_000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoWalletAddress, autoWalletSigner, signer, address])
 
   const handleAddNetwork = async () => {

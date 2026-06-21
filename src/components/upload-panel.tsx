@@ -15,7 +15,6 @@ import { buildAuthHeader, createAuthedProvider } from '@/lib/client/auth'
 import { deriveRecordKey, newRecordSalt, saltToHex } from '@/lib/og/crypto'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
 import { ZG } from '@/lib/og/config'
-import { ethers } from 'ethers'
 import { cn } from '@/lib/utils'
 
 type Stage = 'idle' | 'parsing' | 'analyzing' | 'encrypting' | 'done'
@@ -56,17 +55,10 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         return
       }
 
-      // Guard: if the auto-wallet signer isn't ready yet (e.g. during
-      // reconnection after a page refresh), auth will be null and every
-      // API call will 401. Show a clear message instead of "Upload failed".
       if (!autoWalletSigner || !autoWalletAddress) {
         toast.error('Your wallet is still reconnecting. Please wait a moment and try again.')
         return
       }
-
-      // Pre-warm 0G node selection now (during the slow parse/AI step) so the
-      // actual background upload's node selection is already cached + sorted.
-      void storage?.prewarm()
 
       try {
         setStage('parsing')
@@ -96,20 +88,14 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setStage('encrypting')
         setPct(75)
 
-        // Use an authed provider so the RPC proxy accepts the balance check.
-        // createAuthedProvider is async — must be awaited.
         const provider = await createAuthedProvider(signer, address, ZG.RPC_URL)
-        const balance = await provider.getBalance(autoWalletAddress!)
+        const balance = await provider.getBalance(autoWalletAddress)
         if (balance === 0n) {
           throw new Error('Insufficient 0G gas! Please click "Fund Auto-Wallet" in the status panel on the right.')
         }
 
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
-
-        // ⚡ INSTANT path: compute both Merkle roots LOCALLY (no network) so we
-        // can persist + show the record immediately, then finalize the actual
-        // 0G storage in the background.
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
         const [filePrep, summaryPrep] = await Promise.all([
           storage!.prepareUpload(file, recKey),
@@ -126,16 +112,11 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           rootHash: filePrep.rootHash,
           summaryRootHash: summaryPrep.rootHash,
           recordKeySalt: saltToHex(salt),
-          // Track the original file's name + type so the exact file (PDF, image,
-          // etc.) can be re-downloaded with the right extension, opened natively,
-          // and shared to others as the real document.
           fileName: file.name,
           mimeType: file.type || undefined,
           createdAt: new Date().toISOString(),
         }
 
-        // Persist locally so the record opens instantly (summary + original from
-        // cache, zero network).
         addRecord(meta, summary)
         try {
           const originalBytes = new Uint8Array(await file.arrayBuffer())
@@ -145,7 +126,6 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         }
         setUploadStatus(meta.id, 'pending')
 
-        // Surface the record NOW.
         setStage('done')
         setPct(100)
         toast.success('Saved to your vault! 🎉', {
@@ -158,29 +138,18 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           setDetail('')
         }, 1400)
 
-        // 🔄 Background finalize: the real (slow) on-chain 0G storage. The UI is
-        // already done; the user is on the record page reading from cache.
-        //
-        // IMPORTANT: finalize file then summary SEQUENTIALLY (not in parallel).
-        // The single auto-wallet can only broadcast one Flow `submit` tx at a
-        // time — running both in parallel causes both to use the same nonce,
-        // which produces a require(false) revert on the second submission.
         void (async () => {
           try {
             const fileResult = await filePrep.finalize()
             await summaryPrep.finalize()
             await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
             setUploadStatus(meta.id, 'stored')
-            // File + summary are on 0G -> publish the durable, cross-device index
-            // so this record survives logout/login and is restorable anywhere.
             useVault.getState().syncRemoteIndex()
             toast.success('Backed up to 0G ✓', {
               description: fileResult.txHash ? `tx ${fileResult.txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
             })
           } catch (bgErr) {
             console.error('Background 0G backup failed; auto-retrying until it lands:', bgErr)
-            // Don't give up — keep retrying automatically in the background until
-            // the record is permanently on 0G. The UI stays in 'pending'.
             setUploadStatus(meta.id, 'pending')
             toast.message('0G backup is taking a moment — auto-retrying in the background…')
             void autoBackup(meta)
