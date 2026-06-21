@@ -89,6 +89,7 @@ export class OgStorageAdapter implements StorageAdapter {
         ) => Promise<Tuple<{ txHash?: string } | string>>
       }).upload(blob, ZG.RPC_URL, this.signer, {
         encryption: { type: 'aes256', key },
+        finalityRequired: false,
       })) as Tuple<{ txHash?: string } | string>
       
       tx = attemptTx
@@ -153,6 +154,7 @@ export class OgStorageAdapter implements StorageAdapter {
       ) => Promise<Tuple<unknown>>
     }).upload(mem, ZG.RPC_URL, this.signer, {
       encryption: { type: 'ecies', recipientPubKey: compressed },
+      finalityRequired: false,
     })) as Tuple<unknown>
     if (upErr) throw new Error(String(upErr))
     return { rootHash }
