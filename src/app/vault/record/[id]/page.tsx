@@ -39,7 +39,7 @@ const FAST_TRANSITION = { duration: 0.2 }
 const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
 
 function RecordView({ meta }: { meta: RecordMeta }) {
-  const { storage, summaries, loadSummary, getRecordKey } = useVault()
+  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal } = useVault()
   const [summary, setSummary] = useState<ExtractionResult | undefined>(summaries[meta.id])
   const [loadingSummary, setLoadingSummary] = useState(!summaries[meta.id])
   const [summaryFailed, setSummaryFailed] = useState(false)
@@ -110,6 +110,13 @@ function RecordView({ meta }: { meta: RecordMeta }) {
 
   async function viewOriginal() {
     if (!storage) return
+    // Fast path: the original bytes were cached locally at upload time, so the
+    // just-uploaded record renders instantly with zero network round-trips.
+    const cached = getCachedOriginal(meta.id)
+    if (cached) {
+      setDocText(new TextDecoder().decode(cached))
+      return
+    }
     const recKey = await getRecordKey(meta)
     if (!recKey) return
     setLoadingDoc(true)
@@ -187,14 +194,14 @@ function RecordView({ meta }: { meta: RecordMeta }) {
             }
           >
             {verified
-              ? 'This record\u2019s Merkle root matches 0G \u2014 it has not been tampered with.'
-              : 'The integrity check did not pass. The stored data may be unavailable or still propagating \u2014 try again in a minute.'}
+              ? 'This record’s Merkle root matches 0G — it has not been tampered with.'
+              : 'The integrity check did not pass. The stored data may be unavailable or still propagating — try again in a minute.'}
           </motion.div>
         ) : null}
 
         {loadingSummary ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Decrypting summary\u2026
+            <Loader2 className="h-4 w-4 animate-spin" /> Decrypting summary…
           </div>
         ) : summary ? (
           <Tabs defaultValue="explanation">
@@ -249,7 +256,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                     <CardContent className="space-y-2 text-sm">
                       {summary.sourceQuotes.map((q, i) => (
                         <blockquote key={i} className="border-l-2 border-border pl-3 text-muted-foreground">
-                          \u201c{q.quote}\u201d {q.supports ? <span className="text-xs">\u2014 {q.supports}</span> : null}
+                          “{q.quote}” {q.supports ? <span className="text-xs">— {q.supports}</span> : null}
                         </blockquote>
                       ))}
                     </CardContent>
@@ -280,7 +287,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                         summary.conditions.map((c, i) => (
                           <div key={i}>
                             <span className="font-medium">{c.name}</span>
-                            {c.status ? ` \u2014 ${c.status}` : ''}
+                            {c.status ? ` — ${c.status}` : ''}
                             {c.note ? <p className="text-muted-foreground">{c.note}</p> : null}
                           </div>
                         ))
@@ -300,8 +307,8 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                         summary.medications.map((m, i) => (
                           <div key={i}>
                             <span className="font-medium">{m.name}</span>
-                            {m.dose ? ` \u00b7 ${m.dose}` : ''}
-                            {m.frequency ? ` \u00b7 ${m.frequency}` : ''}
+                            {m.dose ? ` · ${m.dose}` : ''}
+                            {m.frequency ? ` · ${m.frequency}` : ''}
                             {m.purpose ? <p className="text-muted-foreground">{m.purpose}</p> : null}
                           </div>
                         ))

@@ -51,7 +51,7 @@ function friendlyProgress(msg: string): { label: string; pct?: number } {
 }
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [detail, setDetail] = useState('')
@@ -158,6 +158,14 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         }
         void index!.put(meta).catch(e => console.warn('KV index write failed:', e))
         addRecord(meta, summary)
+        // Cache the ORIGINAL bytes locally so opening this record renders the
+        // original instantly — no 0G download / indexer-propagation wait.
+        try {
+          const originalBytes = new Uint8Array(await file.arrayBuffer())
+          cacheOriginal(meta.id, originalBytes)
+        } catch (cacheErr) {
+          console.warn('Failed to cache original locally:', cacheErr)
+        }
         stopTick(100)
 
         setStage('done')
@@ -179,7 +187,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, onUploaded],
   )
 
   return (
