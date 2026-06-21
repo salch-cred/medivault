@@ -14,7 +14,7 @@ import {
   clearBurnerKey,
 } from '@/lib/og/cache'
 import { loadRemoteIndex, saveRemoteIndex, mergeRecords } from '@/lib/og/remote-index'
-import { buildAuthHeader } from '@/lib/client/auth'
+import { buildAuthHeader, getCachedAuthHeader } from '@/lib/client/auth'
 import { ZG } from '@/lib/og/config'
 import { EMPTY_EXTRACTION } from '@/lib/og/types'
 import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
@@ -24,9 +24,6 @@ type Status = 'disconnected' | 'connecting' | 'connected'
 type BackupStatus = 'pending' | 'stored' | 'failed'
 
 const SUMMARY_DECRYPT_TIMEOUT_MS = 25_000
-
-// Records currently in an automatic backup-retry loop. Module-level so a single
-// loop runs per record id even across component re-mounts / re-renders.
 const autoBackupInFlight = new Set<string>()
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -57,31 +54,14 @@ type VaultState = {
   index: KvIndexAdapter | null
   records: RecordMeta[]
   summaries: Record<string, ExtractionResult>
-  // In-memory cache of decrypted ORIGINAL document bytes, keyed by record id.
-  // Populated at upload time so opening a freshly uploaded record renders the
-  // original INSTANTLY with zero network round-trips (no waiting on the 0G
-  // indexer to propagate the file). Not persisted to disk to avoid
-  // localStorage quota issues with large files; on a full reload we fall back
-  // to a 0G download (which uses the propagation-aware read-retry).
   originals: Record<string, Uint8Array>
-  // Background 0G-backup status per record id. Uploads complete optimistically
-  // (record shown instantly from local cache) while the real on-chain storage
-  // finalizes in the background. 'pending' while uploading/retrying, 'stored'
-  // on success, 'failed' only when we genuinely can't retry (original bytes no
-  // longer in memory).
   uploadStatus: Record<string, BackupStatus>
-  // Ids whose summary failed to load this session (e.g. ciphertext never
-  // successfully stored on 0G during the earlier broken era). We short-circuit
-  // these so the vault page doesn't re-download+retry them on every render and
-  // flood the console with network errors. Cleared on connect/disconnect.
   failedSummaries: Record<string, boolean>
   receivedRecords: any[]
   loadingRecords: boolean
   language: string
   eli5: boolean
-  emergency: {
-    bloodType: string
-  }
+  emergency: { bloodType: string }
   connect: (provider: ethers.BrowserProvider, address: string) => Promise<void>
   disconnect: () => void
   refresh: () => Promise<void>
@@ -94,13 +74,7 @@ type VaultState = {
   autoBackup: (meta: RecordMeta) => Promise<void>
   importReceivedRecord: (args: {
     shareHash: string
-    payload: {
-      title: string
-      docType: string
-      date: string | null
-      fileName?: string | null
-      mimeType?: string | null
-    }
+    payload: { title: string; docType: string; date: string | null; fileName?: string | null; mimeType?: string | null }
     originalBytes: Uint8Array
     summary: ExtractionResult | null
   }) => Promise<string | null>
@@ -122,7 +96,7 @@ export const useVault = create<VaultState>((set, get) => ({
   signer: null,
   storage: null,
   index: null,
- records: [],
+  records: [],
   summaries: {},
   originals: {},
   uploadStatus: {},
@@ -156,11 +130,6 @@ export const useVault = create<VaultState>((set, get) => ({
         cachedSummaries = await loadCachedSummaries(address, key)
       } catch {}
 
-      // Pubkey registration is deferred to after connection completes.
-      // It uses the cached auth header from refresh(), avoiding an extra
-      // wallet signature popup during connect(). The registration is
-      // non-critical (only needed for sharing) and retries silently.
-
       set({
         status: 'connected',
         address,
@@ -179,20 +148,11 @@ export const useVault = create<VaultState>((set, get) => ({
       })
       await get().refresh()
     } catch (err) {
-      set({
-        status: 'disconnected',
-        error: err instanceof Error ? err.message : 'Failed to connect wallet.',
-      })
+      set({ status: 'disconnected', error: err instanceof Error ? err.message : 'Failed to connect wallet.' })
     }
   },
 
   disconnect: () => {
-    // NOTE: we intentionally KEEP the encrypted record/summary cache on disk so
-    // logging back in with the same wallet restores the vault instantly. That
-    // cache is AES-GCM encrypted with the wallet-derived key, so only this
-    // wallet can ever decrypt it. (Previously we wiped it here, which is exactly
-    // what made records 'disappear' after logout/login.) We still clear the
-    // in-memory master seed + burner key so the signing secret never lingers.
     clearBurnerKey()
     clearMasterSeed()
     set({
@@ -221,33 +181,23 @@ export const useVault = create<VaultState>((set, get) => ({
       const auth = await buildAuthHeader(signer, address)
       const networkRecords = await index.list(address)
 
-      // Pull the durable, cross-device index stored on 0G. This is what lets a
-      // logged-out / cache-cleared / brand-new-device session rebuild the vault.
       let remoteRecords: RecordMeta[] = []
       if (key && storage) {
-        try {
-          remoteRecords = await loadRemoteIndex(address, key, storage, auth)
-        } catch {}
+        try { remoteRecords = await loadRemoteIndex(address, key, storage, auth) } catch {}
       }
 
-      // MERGE (never overwrite) so no locally-known record is ever dropped.
       const merged = mergeRecords(current, networkRecords, remoteRecords)
       set({ records: merged, error: null })
       if (key) await saveCachedRecords(address, key, merged)
 
-      // Self-heal: if local knows about records the durable 0G index doesn't yet
-      // have, push the merged set up so the next device/login sees everything.
-      if (key && storage && merged.length > remoteRecords.length) {
+      if (key && storage && merged.length > remoteRecords.length && auth) {
         void saveRemoteIndex(address, key, storage, merged, auth)
       }
 
       const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`, {
         headers: auth ? { 'x-medivault-auth': auth } : undefined,
       })
-      if (sharedRes.ok) {
-        const sharedData = await sharedRes.json()
-        set({ receivedRecords: sharedData })
-      }
+      if (sharedRes.ok) set({ receivedRecords: await sharedRes.json() })
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Failed to load records.' })
     } finally {
@@ -258,19 +208,12 @@ export const useVault = create<VaultState>((set, get) => ({
   loadSummary: async (meta) => {
     const { storage, key, summaries, failedSummaries, address } = get()
     if (summaries[meta.id]) return summaries[meta.id]
-    // Already failed this session -> don't re-download / re-decrypt. This stops
-    // the vault page from hammering the network for records whose ciphertext
-    // isn't retrievable (and avoids the AxiosError ERR_NETWORK console flood).
     if (failedSummaries[meta.id]) return null
     if (!storage || !key || !meta.summaryRootHash) return null
 
     try {
       const recKey = await recordKey(key, meta.recordKeySalt)
-      const bytes = await withTimeout(
-        storage.downloadDecrypted(meta.summaryRootHash, recKey),
-        SUMMARY_DECRYPT_TIMEOUT_MS,
-        'Summary decryption',
-      )
+      const bytes = await withTimeout(storage.downloadDecrypted(meta.summaryRootHash, recKey), SUMMARY_DECRYPT_TIMEOUT_MS, 'Summary decryption')
       const parsed = JSON.parse(new TextDecoder().decode(bytes)) as ExtractionResult
       const newSummaries = { ...get().summaries, [meta.id]: parsed }
       set({ summaries: newSummaries })
@@ -293,34 +236,13 @@ export const useVault = create<VaultState>((set, get) => ({
       void saveCachedRecords(address, key, newRecords)
       void saveCachedSummaries(address, key, newSummaries)
     }
-
-    // Persist to the local index fallback IMMEDIATELY (localStorage write, no
-    // gas / no network) so the record is never lost even if the slow background
-    // 0G upload fails. The durable cross-device 0G index is synced separately
-    // (after the file upload finalizes) to avoid auto-wallet nonce contention.
     void index?.put(meta).catch((e) => console.warn('Local index put failed:', e))
   },
 
-  cacheOriginal: (id, bytes) => {
-    set({ originals: { ...get().originals, [id]: bytes } })
-  },
+  cacheOriginal: (id, bytes) => set({ originals: { ...get().originals, [id]: bytes } }),
+  getCachedOriginal: (id) => get().originals[id] ?? null,
+  setUploadStatus: (id, status) => set({ uploadStatus: { ...get().uploadStatus, [id]: status } }),
 
-  getCachedOriginal: (id) => {
-    return get().originals[id] ?? null
-  },
-
-  setUploadStatus: (id, status) => {
-    set({ uploadStatus: { ...get().uploadStatus, [id]: status } })
-  },
-
-  // Single attempt to store a record's original + summary on 0G from the
-  // locally-cached original bytes. Returns true on success. Used by autoBackup
-  // (the retry loop) and the upload flow.
-  //
-  // IMPORTANT: uploads file then summary SEQUENTIALLY. The single auto-wallet
-  // can only broadcast one Flow `submit` tx at a time — running both in
-  // parallel causes both to use the same nonce, producing a require(false)
-  // revert on the second submission.
   backupRecord: async (meta) => {
     const { storage, index, summaries } = get()
     if (!storage) return false
@@ -332,16 +254,11 @@ export const useVault = create<VaultState>((set, get) => ({
     }
     get().setUploadStatus(meta.id, 'pending')
     try {
-      // Sequential: file first, then summary. Parallel uploads race the nonce.
       await storage.uploadEncrypted(original, recKey)
       const summary = summaries[meta.id]
-      if (summary) {
-        const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
-        await storage.uploadEncrypted(summaryBytes, recKey)
-      }
+      if (summary) await storage.uploadEncrypted(new TextEncoder().encode(JSON.stringify(summary)), recKey)
       if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
       get().setUploadStatus(meta.id, 'stored')
-      // Record bytes are now on 0G -> publish the durable cross-device index.
       get().syncRemoteIndex()
       return true
     } catch (e) {
@@ -351,9 +268,6 @@ export const useVault = create<VaultState>((set, get) => ({
     }
   },
 
-  // Automatically retry the 0G backup with capped exponential backoff until it
-  // succeeds. The user never has to click 'retry' -- once the network (or gas)
-  // recovers, the next attempt lands and the record is permanently on 0G.
   autoBackup: async (meta) => {
     if (autoBackupInFlight.has(meta.id)) return
     autoBackupInFlight.add(meta.id)
@@ -361,21 +275,13 @@ export const useVault = create<VaultState>((set, get) => ({
       let delay = 1500
       const MAX_DELAY = 20_000
       for (;;) {
-        // Re-uploading needs the original bytes (kept in memory). If they're
-        // gone (e.g. a full page reload before the backup finished) we can't
-        // retry from here -> surface 'failed' and stop the loop.
         if (!get().getCachedOriginal(meta.id)) {
           get().setUploadStatus(meta.id, 'failed')
           return
         }
         const ok = await get().backupRecord(meta)
         if (ok) return
-        // Still failing -> keep the optimistic 'pending' look (we ARE retrying)
-        // rather than scaring the user with a 'failed' badge.
         get().setUploadStatus(meta.id, 'pending')
-        // If the auto-wallet is simply out of gas, retrying fast is pointless --
-        // back off to the max interval so a later top-up is picked up
-        // automatically (the very next attempt will then succeed).
         try {
           const { autoWalletSigner, autoWalletAddress } = get()
           const provider = (autoWalletSigner as (ethers.Signer & { provider?: ethers.Provider | null }) | null)?.provider
@@ -392,12 +298,6 @@ export const useVault = create<VaultState>((set, get) => ({
     }
   },
 
-  // Save a record that was SHARED WITH the current wallet into this wallet's own
-  // vault, permanently. The recipient becomes a true owner: the original file +
-  // summary are re-encrypted under THIS wallet's own per-record key and stored
-  // on 0G under this wallet's index, so the shared document stays in the vault
-  // forever (survives logout/login and is restorable on any device) and opens
-  // instantly from cache on subsequent visits. Idempotent per share hash.
   importReceivedRecord: async ({ shareHash, payload, originalBytes, summary }) => {
     const { storage, key, index, address, records } = get()
     if (!storage || !key || !address) return null
@@ -410,10 +310,6 @@ export const useVault = create<VaultState>((set, get) => ({
       const salt = newRecordSalt()
       const recKey = await deriveRecordKey(key, salt)
       const summaryBytes = new TextEncoder().encode(JSON.stringify(effectiveSummary))
-
-      // Compute both Merkle roots LOCALLY (no network / no gas) so the record
-      // appears in the vault immediately; the actual on-chain 0G storage is
-      // finalized in the background and auto-retried until it lands.
       const [filePrep, summaryPrep] = await Promise.all([
         storage.prepareUpload(originalBytes, recKey),
         storage.prepareUpload(summaryBytes, recKey),
@@ -433,19 +329,12 @@ export const useVault = create<VaultState>((set, get) => ({
         createdAt: new Date().toISOString(),
       }
 
-      // Persist + show instantly (local encrypted cache => stays in wallet even
-      // before the 0G backup finishes, and survives logout/login).
       get().addRecord(meta, effectiveSummary)
       get().cacheOriginal(meta.id, originalBytes)
       get().setUploadStatus(meta.id, 'pending')
 
       void (async () => {
         try {
-          // Finalize sequentially (NOT in parallel) so the single auto-wallet
-          // never broadcasts two Flow `submit` transactions on the same nonce at
-          // once -- that race caused nonce/gas contention and require(false)
-          // reverts. Each finalize already self-heals duplicates via the storage
-          // adapter's on-chain existence check.
           await filePrep.finalize()
           await summaryPrep.finalize()
           if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
@@ -465,20 +354,17 @@ export const useVault = create<VaultState>((set, get) => ({
     }
   },
 
-  // Encrypt + upload the current record index to 0G and persist its pointer so
-  // the vault survives logout/login and is recoverable on any device.
+  // Do not trigger wallet signature prompts from background upload completion.
+  // If a fresh auth header already exists from a recent user action, use it;
+  // otherwise skip remote-index sync. Local encrypted cache + local index remain
+  // updated immediately, and remote sync can happen after the next explicit
+  // wallet unlock/refresh.
   syncRemoteIndex: () => {
-    const { address, key, storage, records, signer } = get()
-    if (address && key && storage && signer) {
-      void (async () => {
-        try {
-          const auth = await buildAuthHeader(signer, address)
-          if (!auth) return
-          await saveRemoteIndex(address, key, storage, records, auth)
-        } catch {
-          // Remote index sync is non-critical
-        }
-      })()
+    const { address, key, storage, records } = get()
+    if (address && key && storage) {
+      const auth = getCachedAuthHeader(address)
+      if (!auth) return
+      void saveRemoteIndex(address, key, storage, records, auth).catch(() => {})
     }
   },
 
