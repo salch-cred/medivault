@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Button } from '@/components/ui/button'
 import { ZG } from '@/lib/og/config'
 import { useVault } from '@/lib/store'
+import { createAuthedProvider } from '@/lib/client/auth'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -18,7 +19,7 @@ const ITEMS = [
 ]
 
 export function OgStatus() {
-  const { autoWalletAddress } = useVault()
+  const { autoWalletAddress, autoWalletSigner, signer, address } = useVault()
   const [balance, setBalance] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -26,7 +27,8 @@ export function OgStatus() {
     if (!autoWalletAddress) return
     setIsRefreshing(true)
     try {
-      const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
+      // Use authed provider so the RPC proxy accepts the request.
+      const provider = await createAuthedProvider(signer ?? autoWalletSigner, address ?? autoWalletAddress, ZG.RPC_URL)
       const bal = await provider.getBalance(autoWalletAddress)
       setBalance(Number(ethers.formatEther(bal)).toFixed(4) + ' OG')
     } catch (e) {
@@ -40,7 +42,7 @@ export function OgStatus() {
     fetchBalance()
     const interval = setInterval(fetchBalance, 10000)
     return () => clearInterval(interval)
-  }, [autoWalletAddress])
+  }, [autoWalletAddress, autoWalletSigner, signer, address])
 
   const handleAddNetwork = async () => {
     // @ts-ignore - window.ethereum is not strictly typed
