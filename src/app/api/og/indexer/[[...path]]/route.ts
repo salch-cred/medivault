@@ -10,6 +10,35 @@ const OG_MAINNET_INDEXER = 'https://indexer-storage-turbo.0g.ai'
 
 const MAX_BODY_BYTES = 32 * 1024 // 32 KB
 
+// Read-only JSON-RPC methods that the 0G SDK calls internally during
+// upload/download operations. These can't carry auth headers (the SDK
+// makes its own fetch() calls), so they're exempted from auth.
+// They only return storage node metadata and file locations — not user data.
+const UNAUTHED_READ_METHODS = new Set([
+  'getShardedNodes',
+  'getFileLocations',
+  'downloadToBlob',
+  'downloadSegment',
+  'downloadFileMeta',
+  'peekHeader',
+  'getFileSummary',
+  'getFileInfo',
+])
+
+/** Check if a POST body contains only read-only methods that don't need auth. */
+function isReadOnlyBody(body: ArrayBuffer | undefined): boolean {
+  if (!body) return false
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body))
+    const reqs = Array.isArray(parsed) ? parsed : [parsed]
+    return reqs.every(
+      (r: any) => typeof r?.method === 'string' && UNAUTHED_READ_METHODS.has(r.method),
+    )
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: Request, { params }: { params: { path?: string[] } }) {
   return handleProxy(req, params.path ?? [])
 }
@@ -43,12 +72,24 @@ const STRIPPED_RESPONSE_HEADERS = [
 
 async function handleProxy(req: Request, pathArray: string[] = []) {
   try {
-    // Require authentication for indexer proxy access.
-    const auth = verifyAuth(req)
-    if (!auth.ok) return auth.response
+    let body: ArrayBuffer | undefined
+    if (req.method === 'POST') {
+      body = await req.arrayBuffer()
+      if (body.byteLength > MAX_BODY_BYTES) {
+        return NextResponse.json({ error: 'Request too large.' }, { status: 413 })
+      }
+    }
 
-    if (!checkRateLimit(auth.address, 'indexer', 60)) {
-      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
+    // Allow read-only indexer queries without auth — the 0G SDK makes
+    // internal fetch() calls that can't carry auth headers.
+    // All other requests (e.g. custom writes) require authentication.
+    if (!isReadOnlyBody(body)) {
+      const auth = verifyAuth(req)
+      if (!auth.ok) return auth.response
+
+      if (!checkRateLimit(auth.address, 'indexer', 60)) {
+        return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
+      }
     }
 
     const path = pathArray.join('/')
@@ -67,14 +108,6 @@ async function handleProxy(req: Request, pathArray: string[] = []) {
     })
     if (!headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
-    }
-
-    let body: ArrayBuffer | undefined
-    if (req.method === 'POST') {
-      body = await req.arrayBuffer()
-      if (body.byteLength > MAX_BODY_BYTES) {
-        return NextResponse.json({ error: 'Request too large.' }, { status: 413 })
-      }
     }
 
     const response = await fetch(targetUrl, {
