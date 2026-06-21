@@ -252,12 +252,21 @@ export const useVault = create<VaultState>((set, get) => ({
         void saveRemoteIndex(address, key, storage, merged, auth)
       }
 
-      const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`, {
-        headers: auth ? { 'x-medivault-auth': auth } : undefined,
-      })
-      if (sharedRes.ok) {
-        const sharedData = await sharedRes.json()
-        set({ receivedRecords: sharedData })
+      // Only fetch shared records when we have a valid auth header. Without it
+      // the server returns 401, which spams the console during the reconnection
+      // window (wallet connected but signer not yet restored).
+      if (auth) {
+        try {
+          const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`, {
+            headers: { 'x-medivault-auth': auth },
+          })
+          if (sharedRes.ok) {
+            const sharedData = await sharedRes.json()
+            set({ receivedRecords: sharedData })
+          }
+        } catch {
+          // Shared-records fetch is non-critical; don't fail the whole refresh.
+        }
       }
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Failed to load records.' })
@@ -278,7 +287,7 @@ export const useVault = create<VaultState>((set, get) => ({
     try {
       const recKey = await recordKey(key, meta.recordKeySalt)
       const bytes = await withTimeout(
-        storage.downloadDecrypted(meta.summaryRootHash, recKey),
+        storage.downloadDecrypted(meta.summaryRootHash, recKey, undefined, { expectExists: true }),
         SUMMARY_DECRYPT_TIMEOUT_MS,
         'Summary decryption',
       )

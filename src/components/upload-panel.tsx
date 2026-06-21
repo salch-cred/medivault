@@ -56,6 +56,14 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         return
       }
 
+      // Guard: if the auto-wallet signer isn't ready yet (e.g. during
+      // reconnection after a page refresh), auth will be null and every
+      // API call will 401. Show a clear message instead of "Upload failed".
+      if (!autoWalletSigner || !autoWalletAddress) {
+        toast.error('Your wallet is still reconnecting. Please wait a moment and try again.')
+        return
+      }
+
       // Pre-warm 0G node selection now (during the slow parse/AI step) so the
       // actual background upload's node selection is already cached + sorted.
       void storage?.prewarm()
