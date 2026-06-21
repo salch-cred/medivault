@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -67,7 +67,23 @@ type SharedPayload = {
   mimeType?: string | null
 }
 
+// Next.js 14 requires useSearchParams() to be wrapped in a <Suspense> boundary.
+// The default export wraps the inner component (which uses useSearchParams)
+// in <Suspense> so the build succeeds.
 export default function SharedRecordPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[50vh] flex-col items-center justify-center gap-3 text-center px-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm font-semibold">Loading secure record...</p>
+      </div>
+    }>
+      <SharedRecordPageInner />
+    </Suspense>
+  )
+}
+
+function SharedRecordPageInner() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -804,7 +820,7 @@ export default function SharedRecordPage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-black mb-2 text-base">Active Medications</h4>
-                  <ul className="list-inside list-disc text-base text-black marker:text:black space-y-1">
+                  <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
                     {summary.medications?.length ? summary.medications.map((m, i) => (
                       <li key={i}>{m.name} {m.dose && `- ${m.dose}`}</li>
                     )) : <li>None Recorded</li>}
