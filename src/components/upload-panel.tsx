@@ -116,6 +116,11 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           rootHash: filePrep.rootHash,
           summaryRootHash: summaryPrep.rootHash,
           recordKeySalt: saltToHex(salt),
+          // Track the original file's name + type so the exact file (PDF, image,
+          // etc.) can be re-downloaded with the right extension, opened natively,
+          // and shared to others as the real document.
+          fileName: file.name,
+          mimeType: file.type || undefined,
           createdAt: new Date().toISOString(),
         }
 

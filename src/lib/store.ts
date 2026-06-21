@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { ethers } from 'ethers'
 
-import { deriveVaultKey, deriveAutoWalletPk, recordKey, clearMasterSeed } from '@/lib/og/crypto'
+import { deriveVaultKey, deriveAutoWalletPk, recordKey, deriveRecordKey, newRecordSalt, saltToHex, clearMasterSeed } from '@/lib/og/crypto'
 import { OgStorageAdapter } from '@/lib/og/storage-adapter'
 import { KvIndexAdapter } from '@/lib/og/kv-index-adapter'
 import {
@@ -15,6 +15,7 @@ import {
 } from '@/lib/og/cache'
 import { loadRemoteIndex, saveRemoteIndex, mergeRecords } from '@/lib/og/remote-index'
 import { ZG } from '@/lib/og/config'
+import { EMPTY_EXTRACTION } from '@/lib/og/types'
 import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
 
 type Status = 'disconnected' | 'connecting' | 'connected'
@@ -90,6 +91,18 @@ type VaultState = {
   setUploadStatus: (id: string, status: BackupStatus) => void
   backupRecord: (meta: RecordMeta) => Promise<boolean>
   autoBackup: (meta: RecordMeta) => Promise<void>
+  importReceivedRecord: (args: {
+    shareHash: string
+    payload: {
+      title: string
+      docType: string
+      date: string | null
+      fileName?: string | null
+      mimeType?: string | null
+    }
+    originalBytes: Uint8Array
+    summary: ExtractionResult | null
+  }) => Promise<string | null>
   syncRemoteIndex: () => void
   getRecordKey: (meta: RecordMeta) => Promise<Uint8Array | null>
   setLanguage: (lang: string) => void
@@ -374,6 +387,73 @@ export const useVault = create<VaultState>((set, get) => ({
       }
     } finally {
       autoBackupInFlight.delete(meta.id)
+    }
+  },
+
+  // Save a record that was SHARED WITH the current wallet into this wallet's own
+  // vault, permanently. The recipient becomes a true owner: the original file +
+  // summary are re-encrypted under THIS wallet's own per-record key and stored
+  // on 0G under this wallet's index, so the shared document stays in the vault
+  // forever (survives logout/login and is restorable on any device) and opens
+  // instantly from cache on subsequent visits. Idempotent per share hash.
+  importReceivedRecord: async ({ shareHash, payload, originalBytes, summary }) => {
+    const { storage, key, index, address, records } = get()
+    if (!storage || !key || !address) return null
+    const importId = `shared_${shareHash.toLowerCase()}`
+    const existing = records.find((r) => r.id === importId)
+    if (existing) return existing.id
+
+    const effectiveSummary = summary ?? EMPTY_EXTRACTION
+    try {
+      const salt = newRecordSalt()
+      const recKey = await deriveRecordKey(key, salt)
+      const summaryBytes = new TextEncoder().encode(JSON.stringify(effectiveSummary))
+
+      // Compute both Merkle roots LOCALLY (no network / no gas) so the record
+      // appears in the vault immediately; the actual on-chain 0G storage is
+      // finalized in the background and auto-retried until it lands.
+      const [filePrep, summaryPrep] = await Promise.all([
+        storage.prepareUpload(originalBytes, recKey),
+        storage.prepareUpload(summaryBytes, recKey),
+      ])
+
+      const meta: RecordMeta = {
+        id: importId,
+        owner: address,
+        title: payload.title || effectiveSummary.title || 'Shared record',
+        docType: (payload.docType as RecordMeta['docType']) || 'other',
+        date: payload.date ?? null,
+        rootHash: filePrep.rootHash,
+        summaryRootHash: summaryPrep.rootHash,
+        recordKeySalt: saltToHex(salt),
+        fileName: payload.fileName ?? undefined,
+        mimeType: payload.mimeType ?? undefined,
+        createdAt: new Date().toISOString(),
+      }
+
+      // Persist + show instantly (local encrypted cache => stays in wallet even
+      // before the 0G backup finishes, and survives logout/login).
+      get().addRecord(meta, effectiveSummary)
+      get().cacheOriginal(meta.id, originalBytes)
+      get().setUploadStatus(meta.id, 'pending')
+
+      void (async () => {
+        try {
+          await Promise.all([filePrep.finalize(), summaryPrep.finalize()])
+          if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
+          get().setUploadStatus(meta.id, 'stored')
+          get().syncRemoteIndex()
+        } catch (bgErr) {
+          console.error('Saving shared record to your 0G failed; auto-retrying until it lands:', bgErr)
+          get().setUploadStatus(meta.id, 'pending')
+          void get().autoBackup(meta)
+        }
+      })()
+
+      return meta.id
+    } catch (e) {
+      console.error('importReceivedRecord failed:', e)
+      return null
     }
   },
 
