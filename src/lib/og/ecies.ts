@@ -16,7 +16,7 @@
 // Construction:
 //   - ECDH over secp256k1 via ethers SigningKey.computeSharedSecret (so we can
 //     reuse the exact same wallet key pair the rest of the app already uses).
-//   - HKDF-lite: SHA-256(sharedSecret) -> 256-bit AES-GCM key.
+//   - HKDF-SHA256 for key derivation with domain separation (replaces raw SHA-256).
 //   - AES-256-GCM (Web Crypto) for authenticated encryption.
 //   - Optional gzip of the plaintext (CompressionStream) to keep the KV value
 //     small. All primitives are platform built-ins; no new dependencies.
@@ -24,8 +24,8 @@
 import { ethers } from 'ethers'
 
 export type EciesEnvelope = {
-  v: 1
-  alg: 'ecdh-secp256k1-aesgcm'
+  v: 2
+  alg: 'ecdh-secp256k1-aesgcm-hkdf'
   /** Whether the plaintext was gzip-compressed before encryption. */
   gz: boolean
   /** Ephemeral compressed public key (0x hex). */
@@ -79,10 +79,33 @@ async function gunzip(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(buf)
 }
 
+// HKDF-SHA256 derivation for the AES key from the ECDH shared secret.
+// Uses domain separation via the `info` parameter to prevent cross-protocol
+// attacks. This replaces the previous raw SHA-256(sharedSecret) approach.
+const HKDF_INFO = new TextEncoder().encode('medivault/ecies/aes-256-gcm/v2')
+const HKDF_SALT = new Uint8Array(0) // Empty salt — ephemeral key ensures uniqueness per encryption
+
 async function aesKeyFromShared(sharedHex: string): Promise<CryptoKey> {
   const sharedBytes = ethers.getBytes(sharedHex)
-  const digest = await subtle().digest('SHA-256', sharedBytes as unknown as BufferSource)
-  return subtle().importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  const keyMaterial = await subtle().importKey(
+    'raw',
+    sharedBytes as unknown as BufferSource,
+    { name: 'HKDF' },
+    false,
+    ['deriveKey'],
+  )
+  return subtle().deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: HKDF_SALT as BufferSource,
+      info: HKDF_INFO as BufferSource,
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
 }
 
 /** Encrypt `plaintext` so that only the holder of the private key matching
@@ -108,8 +131,8 @@ export async function eciesEncrypt(
   )
 
   return {
-    v: 1,
-    alg: 'ecdh-secp256k1-aesgcm',
+    v: 2,
+    alg: 'ecdh-secp256k1-aesgcm-hkdf',
     gz: gz !== null,
     epk: ethers.SigningKey.computePublicKey(ephemeralPriv, true),
     iv: toB64Url(iv),
@@ -118,14 +141,25 @@ export async function eciesEncrypt(
 }
 
 /** Decrypt an envelope produced by `eciesEncrypt` using the recipient's
- *  private key. */
+ *  private key. Supports both v1 (legacy SHA-256) and v2 (HKDF) envelopes. */
 export async function eciesDecrypt(
   privateKey: string,
   env: EciesEnvelope,
 ): Promise<Uint8Array> {
   const sk = new ethers.SigningKey(privateKey)
   const sharedHex = sk.computeSharedSecret(env.epk)
-  const aesKey = await aesKeyFromShared(sharedHex)
+
+  // Support both v1 (legacy raw SHA-256) and v2 (HKDF) key derivation.
+  let aesKey: CryptoKey
+  if (env.v === 2) {
+    aesKey = await aesKeyFromShared(sharedHex)
+  } else {
+    // Legacy v1: raw SHA-256(sharedSecret) for backward compatibility.
+    const sharedBytes = ethers.getBytes(sharedHex)
+    const digest = await subtle().digest('SHA-256', sharedBytes as unknown as BufferSource)
+    aesKey = await subtle().importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  }
+
   const iv = fromB64Url(env.iv)
   const ct = fromB64Url(env.ct)
   const ptBuf = await subtle().decrypt(
