@@ -1,6 +1,6 @@
 'use client'
 
-import type { ethers } from 'ethers'
+import { ethers } from 'ethers'
 
 /**
  * Browser helper that builds the `x-medivault-auth` header expected by the
