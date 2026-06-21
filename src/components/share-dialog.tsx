@@ -42,7 +42,7 @@ export function ShareDialog({
     const targetDoc = doctorInput.trim()
     const name = senderName.trim()
     if (!targetDoc) {
-      toast.error('Enter the recipient\'s wallet address.')
+      toast.error('Enter the recipient wallet address.')
       return
     }
     if (!name) {
@@ -51,9 +51,9 @@ export function ShareDialog({
     }
     try {
       setSharing(true)
-      
+
       let resolvedPubKey = ''
-      
+
       // If it looks like a wallet address (42 chars, starts with 0x)
       if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
         const lookupRes = await fetch(`/api/og/pubkey?address=${encodeURIComponent(targetDoc)}`)
@@ -69,12 +69,12 @@ export function ShareDialog({
       } else {
         resolvedPubKey = targetDoc
       }
-      
+
       // Validate / normalize the recipient public key up front.
       ethers.SigningKey.computePublicKey(resolvedPubKey, true)
-      
+
       // Derive the per-record AES key so we can include it in the share
-      // payload \u2014 the recipient needs it to decrypt the original document
+      // payload — the recipient needs it to decrypt the original document
       // from 0G Storage.
       const recKey = await getRecordKey(meta)
       if (!recKey) {
@@ -84,10 +84,11 @@ export function ShareDialog({
       }
 
       const sharedAt = new Date().toISOString()
-      
+
       // Include both the AI summary AND the original record's root hash +
-      // AES key so the recipient can access the source document on 0G, not
-      // just the AI's interpretation of it.
+      // AES key (plus file name/type) so the recipient can download the exact
+      // source document on 0G — a real, openable PDF/image — not just the AI's
+      // interpretation of it.
       const payload = {
         title: meta.title,
         docType: meta.docType,
@@ -100,10 +101,12 @@ export function ShareDialog({
         recordRootHash: meta.rootHash,
         recordKeySalt: meta.recordKeySalt ?? null,
         recordKeyHex: ethers.hexlify(recKey),
+        fileName: meta.fileName ?? null,
+        mimeType: meta.mimeType ?? null,
       }
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
       const { rootHash } = await storage.shareToRecipient(bytes, resolvedPubKey)
-      
+
       // Register share event on the backend registry so it shows in recipient's dashboard
       const regRes = await fetch('/api/og/share', {
         method: 'POST',
@@ -119,13 +122,13 @@ export function ShareDialog({
           rootHash,
         })
       })
-      
+
       if (!regRes.ok) {
         throw new Error('Successfully stored on 0G, but failed to notify recipient dashboard.')
       }
 
       setShareHash(rootHash)
-      toast.success('Encrypted securely and shared directly to the recipient\'s dashboard!')
+      toast.success('Encrypted securely and shared directly to the recipient dashboard!')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Share failed')
     } finally {
@@ -144,7 +147,7 @@ export function ShareDialog({
         <DialogHeader>
           <DialogTitle>Share securely with family, friends, or doctors</DialogTitle>
           <DialogDescription>
-            Re-encrypts this record securely to the recipient\'s key and posts it directly to their dashboard.
+            Re-encrypts this record securely to the recipient key and posts it directly to their dashboard.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -158,7 +161,7 @@ export function ShareDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="doctorAddress">Recipient\'s Wallet Address</Label>
+            <Label htmlFor="doctorAddress">Recipient Wallet Address</Label>
             <Input
               id="doctorAddress"
               placeholder="0x... (EVM wallet address of family, friend, or doctor)"
@@ -166,7 +169,7 @@ export function ShareDialog({
               onChange={(e) => setDoctorInput(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Enter the recipient\'s wallet address. They must have connected to MediVault at least once.
+              Enter the recipient wallet address. They must have connected to MediVault at least once.
             </p>
           </div>
         </div>

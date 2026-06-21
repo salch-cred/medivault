@@ -78,3 +78,62 @@ export function classifyFlag(flag: string): 'low' | 'normal' | 'high' | 'unknown
   if (f === 'low' || f === 'high' || f === 'normal') return f
   return 'unknown'
 }
+
+const MIME_EXTENSIONS: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/bmp': '.bmp',
+  'image/tiff': '.tiff',
+  'text/plain': '.txt',
+  'text/markdown': '.md',
+  'text/csv': '.csv',
+  'application/json': '.json',
+}
+
+/** File extension (with leading dot) for a MIME type, or '' if unknown. */
+export function extensionForMime(mime?: string | null): string {
+  if (!mime) return ''
+  return MIME_EXTENSIONS[mime.toLowerCase()] || ''
+}
+
+/** Whether a MIME type can be safely shown as decoded text. */
+export function isTextLike(mime?: string | null): boolean {
+  if (!mime) return true // legacy records had no stored type; assume text
+  const m = mime.toLowerCase()
+  return m.startsWith('text/') || m === 'application/json' || m === 'application/xml'
+}
+
+export function isImageMime(mime?: string | null): boolean {
+  return !!mime && mime.toLowerCase().startsWith('image/')
+}
+
+export function isPdfMime(mime?: string | null): boolean {
+  return !!mime && mime.toLowerCase() === 'application/pdf'
+}
+
+/** Categorize a file for preview rendering. */
+export function fileKind(mime?: string | null): 'text' | 'image' | 'pdf' | 'binary' {
+  if (isImageMime(mime)) return 'image'
+  if (isPdfMime(mime)) return 'pdf'
+  if (isTextLike(mime)) return 'text'
+  return 'binary'
+}
+
+/** Build a safe download filename, preserving the original name/extension. */
+export function downloadFileName(
+  title: string,
+  fileName?: string | null,
+  mimeType?: string | null,
+): string {
+  if (fileName && fileName.trim()) {
+    const safe = fileName.trim().replace(/[^\w.\-]+/g, '_')
+    if (/\.[A-Za-z0-9]+$/.test(safe)) return safe
+    return `${safe}${extensionForMime(mimeType) || ''}`
+  }
+  const base = (title || 'medivault-record').replace(/[^\w.\-]+/g, '_')
+  return `${base}${extensionForMime(mimeType) || '.txt'}`
+}

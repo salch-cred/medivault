@@ -34,6 +34,11 @@ export type RecordMeta = {
   // records written before per-record keys existed; those decrypt with the
   // wallet master key directly (see recordKey()).
   recordKeySalt?: string
+  // Original uploaded file's name + MIME type, so the exact file (PDF, image,
+  // etc.) can be re-downloaded with the correct extension and opened natively.
+  // Absent on records uploaded before this was tracked (fall back to .txt).
+  fileName?: string
+  mimeType?: string
   createdAt: string
 }
 
