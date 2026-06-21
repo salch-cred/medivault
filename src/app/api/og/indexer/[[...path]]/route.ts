@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 
+// Edge runtime: near-zero cold start for the indexer JSON-RPC control-plane
+// calls (getShardedNodes / getFileLocations). These are small JSON payloads, so
+// edge is a good fit and removes serverless cold-start latency on the hot path.
+export const runtime = 'edge'
+
 const OG_MAINNET_INDEXER = 'https://indexer-storage-turbo.0g.ai'
 
 export async function POST(req: Request, { params }: { params: { path?: string[] } }) {
@@ -22,13 +27,10 @@ export async function OPTIONS(req: Request) {
 }
 
 // Upstream response headers that must NOT be forwarded verbatim. `fetch`
-// (undici) transparently DECOMPRESSES the response body, so forwarding the
-// upstream `content-encoding`/`content-length` would describe the COMPRESSED
-// payload while we actually return the DECOMPRESSED bytes. That mismatch
-// truncates the JSON-RPC response the SDK reads, making
-// `indexer_getShardedNodes` come back empty/undefined -- which surfaces
-// downstream as the upload-time crash:
-//   "Cannot read properties of undefined (reading 'trusted')".
+// transparently DECOMPRESSES the response body, so forwarding the upstream
+// `content-encoding`/`content-length` would describe the COMPRESSED payload
+// while we return the DECOMPRESSED bytes -- truncating the JSON-RPC response
+// and making indexer_getShardedNodes come back empty/undefined.
 const STRIPPED_RESPONSE_HEADERS = [
   'content-encoding',
   'content-length',
@@ -48,8 +50,6 @@ async function handleProxy(req: Request, pathArray: string[] = []) {
 
     const headers = new Headers()
     req.headers.forEach((value, key) => {
-      // Drop content-length too: we re-send the body via arrayBuffer(), so the
-      // length is recomputed by fetch; a stale value can corrupt the request.
       if (!['host', 'origin', 'referer', 'connection', 'content-length'].includes(key.toLowerCase())) {
         headers.set(key, value)
       }

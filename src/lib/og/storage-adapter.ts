@@ -21,6 +21,8 @@ import type { StorageAdapter } from './adapters'
 
 type Tuple<T> = [T, unknown]
 
+type ProgressFn = (message: string) => void
+
 // 0G SDK upload() positional signature (typings can trail the runtime API):
 //   upload(file, blockchainRpc, signer, uploadOpts?, retryOpts?, txOpts?)
 // txOpts is { gasPrice?: bigint; gasLimit?: bigint } and, when gasPrice > 0,
@@ -42,6 +44,23 @@ export class OgStorageAdapter implements StorageAdapter {
     this.signer = signer
     this.indexer = new Indexer(indexerRpc)
     applyNodeProxy(this.indexer)
+  }
+
+  /**
+   * Warm the upload path before the user actually uploads. Triggering node
+   * selection now (a) warms the edge proxies + indexer connection and (b)
+   * populates the short-lived sharded-node cache (sorted by sync height) in
+   * proxy.ts, so the real upload's node selection is effectively instant.
+   * Best-effort: failures are ignored.
+   */
+  async prewarm(): Promise<void> {
+    try {
+      await (this.indexer as unknown as {
+        getShardedNodes: () => Promise<unknown>
+      }).getShardedNodes()
+    } catch {
+      // ignore -- this is purely an optimization
+    }
   }
 
   /**
@@ -96,8 +115,8 @@ export class OgStorageAdapter implements StorageAdapter {
    * attempts therefore reuse the same (latest) nonce at the same floor price,
    * so the first attempt sticks in the mempool and every retry is rejected
    * with "replacement fee too low" / REPLACEMENT_UNDERPRICED. We instead start
-   * slightly above floor and escalate each retry (>=110% is required to
-   * replace a pending tx), which also clears any tx stuck from earlier runs.
+   * above floor (faster inclusion) and escalate each retry (>=110% is required
+   * to replace a pending tx), which also clears any tx stuck from earlier runs.
    */
   private async uploadWithRetry(
     blob: unknown,
@@ -106,8 +125,8 @@ export class OgStorageAdapter implements StorageAdapter {
     await this.assertIndexerHasNodes()
 
     const floor = await this.networkGasPrice()
-    // First attempt: ~1.25x floor to avoid an immediate underprice rejection.
-    let gasPrice = floor !== undefined ? (floor * 125n) / 100n : undefined
+    // First attempt: ~2x floor for fast (often single-block) inclusion.
+    let gasPrice = floor !== undefined ? (floor * 200n) / 100n : undefined
 
     const maxRetries = 6
     let tx: { txHash?: string } | string | undefined
@@ -158,7 +177,7 @@ export class OgStorageAdapter implements StorageAdapter {
         // Ensure we have a base price even if the first lookup failed.
         if (gasPrice === undefined) {
           const f = await this.networkGasPrice()
-          gasPrice = f !== undefined ? (f * 160n) / 100n : undefined
+          gasPrice = f !== undefined ? (f * 200n) / 100n : undefined
         } else {
           // ~1.6x per retry: comfortably above the 110% replacement threshold.
           gasPrice = (gasPrice * 160n) / 100n
@@ -179,6 +198,7 @@ export class OgStorageAdapter implements StorageAdapter {
   async uploadEncrypted(
     data: Uint8Array | File,
     key: Uint8Array,
+    onProgress?: ProgressFn,
   ): Promise<{ rootHash: string; txHash?: string }> {
     const blob: unknown =
       typeof File !== 'undefined' && data instanceof File
@@ -194,6 +214,7 @@ export class OgStorageAdapter implements StorageAdapter {
     const tx = await this.uploadWithRetry(blob, {
       encryption: { type: 'aes256', key },
       finalityRequired: false,
+      onProgress,
     })
 
     const txHash =

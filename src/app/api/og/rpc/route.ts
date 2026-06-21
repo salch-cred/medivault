@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 
+// Edge runtime: near-zero cold start for this small JSON-RPC control-plane
+// proxy (chain reads, gas price, nonce, tx submit), shaving latency off every
+// upload round trip.
+export const runtime = 'edge'
+
 const OG_MAINNET_RPC = 'https://evmrpc.0g.ai'
 
 export async function POST(req: Request) {

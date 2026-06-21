@@ -39,10 +39,22 @@ const LABEL_TRANSITION = { duration: 0.2 }
 const PROGRESS_INITIAL = { opacity: 0 }
 const PROGRESS_ANIMATE = { opacity: 1 }
 
+// Map a raw 0G SDK progress message to a short, friendly line + a progress %.
+function friendlyProgress(msg: string): { label: string; pct?: number } {
+  const m = msg.toLowerCase()
+  if (m.includes('transaction submitted')) return { label: 'Transaction submitted on 0G…', pct: 72 }
+  if (m.includes('waiting for storage node to sync')) return { label: 'Waiting for storage node to sync…', pct: 80 }
+  if (m.includes('log entry confirmed') || m.includes('uploading segments')) return { label: 'Uploading encrypted segments…', pct: 86 }
+  if (m.includes('segments uploaded') || m.includes('finality')) return { label: 'Almost done — finalizing…', pct: 90 }
+  if (m.includes('finalized') || m.includes('already stored')) return { label: 'Stored on 0G ✓', pct: 92 }
+  return { label: msg }
+}
+
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
   const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
+  const [detail, setDetail] = useState('')
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -55,6 +67,10 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error('Connect your wallet first.')
         return
       }
+
+      // Pre-warm 0G node selection now (during the slow parse/AI step) so the
+      // actual upload's node selection is already cached + sorted by sync.
+      void storage?.prewarm()
 
       let tickInterval: ReturnType<typeof setInterval> | null = null
       const startTick = (from: number, to: number, durationMs = 45000) => {
@@ -75,6 +91,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
       try {
         setStage('parsing')
         setPct(10)
+        setDetail('')
         const auth = await buildAuthHeader(autoWalletSigner, autoWalletAddress)
         const text = await extractText(file, (_s, p) => p && setPct(Math.min(40, 10 + p * 0.3)), auth)
         if (!text.trim()) throw new Error('Could not read any text from this document.')
@@ -108,16 +125,26 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
 
-        startTick(65, 88, 30000)
+        startTick(65, 70, 8000)
+        // Live progress from the SDK (replaces the blank-spinner wait). The file
+        // upload drives the detail line; the tiny summary upload runs alongside.
+        const onProgress = (m: string) => {
+          const { label, pct: p } = friendlyProgress(m)
+          setDetail(label)
+          if (typeof p === 'number') {
+            stopTick(p)
+          }
+        }
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
         const [{ rootHash, txHash }, { rootHash: summaryRootHash }] = await Promise.all([
-          storage!.uploadEncrypted(file, recKey),
+          storage!.uploadEncrypted(file, recKey, onProgress),
           storage!.uploadEncrypted(summaryBytes, recKey),
         ])
-        stopTick(90)
+        stopTick(92)
+        setDetail('')
 
         setStage('indexing')
-        startTick(90, 98, 10000)
+        startTick(92, 98, 8000)
         const meta: RecordMeta = {
           id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `rec_${Date.now()}`,
           owner: address!,
@@ -142,11 +169,13 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setTimeout(() => {
           setStage('idle')
           setPct(0)
+          setDetail('')
         }, 1600)
       } catch (e) {
         if (tickInterval) clearInterval(tickInterval)
         setStage('idle')
         setPct(0)
+        setDetail('')
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
@@ -219,9 +248,13 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
               {busy || stage === 'done' ? STAGE_LABEL[stage] : 'Drop a file or click to upload'}
             </motion.p>
           </AnimatePresence>
-          <p className="mt-1 text-xs text-muted-foreground">
-            TXT, MD, PDF, or an image (PNG/JPG — OCR). Encrypted before it leaves your device.
-          </p>
+          {busy && detail ? (
+            <p className="mt-1 text-xs text-primary/80">{detail}</p>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">
+              TXT, MD, PDF, or an image (PNG/JPG — OCR). Encrypted before it leaves your device.
+            </p>
+          )}
         </motion.div>
 
         {busy || stage === 'done' ? (
