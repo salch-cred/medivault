@@ -11,9 +11,9 @@ import {
   loadCachedSummaries,
   saveCachedRecords,
   saveCachedSummaries,
-  clearAddressCache,
   clearBurnerKey,
 } from '@/lib/og/cache'
+import { loadRemoteIndex, saveRemoteIndex, mergeRecords } from '@/lib/og/remote-index'
 import { ZG } from '@/lib/og/config'
 import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
 
@@ -84,6 +84,7 @@ type VaultState = {
   getCachedOriginal: (id: string) => Uint8Array | null
   setUploadStatus: (id: string, status: BackupStatus) => void
   backupRecord: (meta: RecordMeta) => Promise<boolean>
+  syncRemoteIndex: () => void
   getRecordKey: (meta: RecordMeta) => Promise<Uint8Array | null>
   setLanguage: (lang: string) => void
   setEli5: (v: boolean) => void
@@ -173,8 +174,12 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   disconnect: () => {
-    const { address } = get()
-    if (address) clearAddressCache(address)
+    // NOTE: we intentionally KEEP the encrypted record/summary cache on disk so
+    // logging back in with the same wallet restores the vault instantly. That
+    // cache is AES-GCM encrypted with the wallet-derived key, so only this
+    // wallet can ever decrypt it. (Previously we wiped it here, which is exactly
+    // what made records 'disappear' after logout/login.) We still clear the
+    // in-memory master seed + burner key so the signing secret never lingers.
     clearBurnerKey()
     clearMasterSeed()
     set({
@@ -196,13 +201,31 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   refresh: async () => {
-    const { index, address, key } = get()
+    const { index, address, key, storage, records: current } = get()
     if (!index || !address) return
     set({ loadingRecords: true })
     try {
       const networkRecords = await index.list(address)
-      set({ records: networkRecords, error: null })
-      if (key) await saveCachedRecords(address, key, networkRecords)
+
+      // Pull the durable, cross-device index stored on 0G. This is what lets a
+      // logged-out / cache-cleared / brand-new-device session rebuild the vault.
+      let remoteRecords: RecordMeta[] = []
+      if (key && storage) {
+        try {
+          remoteRecords = await loadRemoteIndex(address, key, storage)
+        } catch {}
+      }
+
+      // MERGE (never overwrite) so no locally-known record is ever dropped.
+      const merged = mergeRecords(current, networkRecords, remoteRecords)
+      set({ records: merged, error: null })
+      if (key) await saveCachedRecords(address, key, merged)
+
+      // Self-heal: if local knows about records the durable 0G index doesn't yet
+      // have, push the merged set up so the next device/login sees everything.
+      if (key && storage && merged.length > remoteRecords.length) {
+        void saveRemoteIndex(address, key, storage, merged)
+      }
 
       const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`)
       if (sharedRes.ok) {
@@ -245,8 +268,8 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   addRecord: (meta, summary) => {
-    const { address, records, summaries, key } = get()
-    const newRecords = [meta, ...records.filter((r) => r.id !== meta.id)]
+    const { address, records, summaries, key, index } = get()
+    const newRecords = mergeRecords([meta], records)
     const newSummaries = { ...summaries, [meta.id]: summary }
     set({ records: newRecords, summaries: newSummaries })
 
@@ -254,6 +277,12 @@ export const useVault = create<VaultState>((set, get) => ({
       void saveCachedRecords(address, key, newRecords)
       void saveCachedSummaries(address, key, newSummaries)
     }
+
+    // Persist to the local index fallback IMMEDIATELY (localStorage write, no
+    // gas / no network) so the record is never lost even if the slow background
+    // 0G upload fails. The durable cross-device 0G index is synced separately
+    // (after the file upload finalizes) to avoid auto-wallet nonce contention.
+    void index?.put(meta).catch((e) => console.warn('Local index put failed:', e))
   },
 
   cacheOriginal: (id, bytes) => {
@@ -291,11 +320,22 @@ export const useVault = create<VaultState>((set, get) => ({
       await Promise.all(uploads)
       if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
       get().setUploadStatus(meta.id, 'stored')
+      // Record bytes are now on 0G -> publish the durable cross-device index.
+      get().syncRemoteIndex()
       return true
     } catch (e) {
       console.error('Background 0G backup failed:', e)
       get().setUploadStatus(meta.id, 'failed')
       return false
+    }
+  },
+
+  // Encrypt + upload the current record index to 0G and persist its pointer so
+  // the vault survives logout/login and is recoverable on any device.
+  syncRemoteIndex: () => {
+    const { address, key, storage, records } = get()
+    if (address && key && storage) {
+      void saveRemoteIndex(address, key, storage, records)
     }
   },
 

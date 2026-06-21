@@ -39,7 +39,7 @@ const PROGRESS_INITIAL = { opacity: 0 }
 const PROGRESS_ANIMATE = { opacity: 1 }
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, syncRemoteIndex } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [detail, setDetail] = useState('')
@@ -153,6 +153,9 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             ])
             await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
             setUploadStatus(meta.id, 'stored')
+            // File + summary are on 0G -> publish the durable, cross-device index
+            // so this record survives logout/login and is restorable anywhere.
+            syncRemoteIndex()
             toast.success('Backed up to 0G ✓', {
               description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
             })
@@ -169,7 +172,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, setUploadStatus, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, setUploadStatus, syncRemoteIndex, onUploaded],
   )
 
   return (
