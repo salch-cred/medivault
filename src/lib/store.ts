@@ -14,6 +14,7 @@ import {
   clearBurnerKey,
 } from '@/lib/og/cache'
 import { loadRemoteIndex, saveRemoteIndex, mergeRecords } from '@/lib/og/remote-index'
+import { buildAuthHeader } from '@/lib/client/auth'
 import { ZG } from '@/lib/og/config'
 import { EMPTY_EXTRACTION } from '@/lib/og/types'
 import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
@@ -121,7 +122,7 @@ export const useVault = create<VaultState>((set, get) => ({
   signer: null,
   storage: null,
   index: null,
-  records: [],
+ records: [],
   summaries: {},
   originals: {},
   uploadStatus: {},
@@ -156,10 +157,14 @@ export const useVault = create<VaultState>((set, get) => ({
       } catch {}
 
       try {
+        const auth = await buildAuthHeader(signer, address)
         const autoWalletPubKey = ethers.SigningKey.computePublicKey(autoWalletPk, true)
         await fetch('/api/og/pubkey', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(auth ? { 'x-medivault-auth': auth } : {}),
+          },
           body: JSON.stringify({ address, publicKey: autoWalletPubKey }),
         })
         await index.registerPublicKey(autoWalletPubKey)
@@ -220,10 +225,11 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   refresh: async () => {
-    const { index, address, key, storage, records: current } = get()
+    const { index, address, key, storage, records: current, signer } = get()
     if (!index || !address) return
     set({ loadingRecords: true })
     try {
+      const auth = await buildAuthHeader(signer, address)
       const networkRecords = await index.list(address)
 
       // Pull the durable, cross-device index stored on 0G. This is what lets a
@@ -231,7 +237,7 @@ export const useVault = create<VaultState>((set, get) => ({
       let remoteRecords: RecordMeta[] = []
       if (key && storage) {
         try {
-          remoteRecords = await loadRemoteIndex(address, key, storage)
+          remoteRecords = await loadRemoteIndex(address, key, storage, auth)
         } catch {}
       }
 
@@ -243,10 +249,12 @@ export const useVault = create<VaultState>((set, get) => ({
       // Self-heal: if local knows about records the durable 0G index doesn't yet
       // have, push the merged set up so the next device/login sees everything.
       if (key && storage && merged.length > remoteRecords.length) {
-        void saveRemoteIndex(address, key, storage, merged)
+        void saveRemoteIndex(address, key, storage, merged, auth)
       }
 
-      const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`)
+      const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`, {
+        headers: auth ? { 'x-medivault-auth': auth } : undefined,
+      })
       if (sharedRes.ok) {
         const sharedData = await sharedRes.json()
         set({ receivedRecords: sharedData })
@@ -471,9 +479,12 @@ export const useVault = create<VaultState>((set, get) => ({
   // Encrypt + upload the current record index to 0G and persist its pointer so
   // the vault survives logout/login and is recoverable on any device.
   syncRemoteIndex: () => {
-    const { address, key, storage, records } = get()
+    const { address, key, storage, records, signer } = get()
     if (address && key && storage) {
-      void saveRemoteIndex(address, key, storage, records)
+      void (async () => {
+        const auth = await buildAuthHeader(signer, address)
+        await saveRemoteIndex(address, key, storage, records, auth)
+      })()
     }
   },
 
