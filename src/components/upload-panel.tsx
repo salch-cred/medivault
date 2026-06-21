@@ -130,7 +130,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         setStage('done')
         setPct(100)
-        toast.success('Encrypted and saved to 0G Mainnet! 🎉', {
+        toast.success('Encrypted and saved to 0G! 🎉', {
           description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
         })
         onUploaded?.(meta.id)
@@ -197,7 +197,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           {busy ? (
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           ) : stage === 'done' ? (
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }}>
+            <motion.div initial= opacity: 0, scale: 0.8  animate= opacity: 1, scale: 1  transition= duration: 0.3 >
               <FileCheck2 className="h-8 w-8 text-emerald-500" />
             </motion.div>
           ) : (
@@ -206,10 +206,10 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           <AnimatePresence mode="wait">
             <motion.p
               key={stage}
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -5 }}
-              transition={{ duration: 0.2 }}
+              initial= opacity: 0, y: 5 
+              animate= opacity: 1, y: 0 
+              exit= opacity: 0, y: -5 
+              transition= duration: 0.2 
               className="mt-3 font-medium"
             >
               {busy || stage === 'done' ? STAGE_LABEL[stage] : 'Drop a file or click to upload'}
@@ -221,7 +221,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         </motion.div>
 
         {busy || stage === 'done' ? (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+          <motion.div initial= opacity: 0  animate= opacity: 1 >
             <Progress value={pct} />
           </motion.div>
         ) : null}
