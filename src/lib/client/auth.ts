@@ -71,3 +71,53 @@ export async function buildAuthHeader(
     return null
   }
 }
+
+/**
+ * Create an ethers.JsonRpcProvider that injects the `x-medivault-auth` header
+ * into every JSON-RPC request via a custom FetchRequest override.
+ *
+ * This is needed because the /api/og/rpc proxy now requires auth (added in
+ * security fixes), but ethers.JsonRpcProvider does not send custom headers
+ * by default.
+ *
+ * The signer is used to build the auth header on-demand (with caching).
+ * If signer or address is null, falls back to a plain provider (best effort).
+ */
+export async function createAuthedProvider(
+  signer: ethers.Signer | null,
+  address: string | null,
+  rpcUrl: string,
+): Promise<ethers.JsonRpcProvider> {
+  if (!signer || !address) {
+    // Best-effort fallback: try without auth (may 401, but won't crash).
+    return new ethers.JsonRpcProvider(rpcUrl)
+  }
+
+  const provider = new ethers.JsonRpcProvider(rpcUrl)
+  const originalFetch = provider.fetch.bind(provider)
+
+  // Override fetch to inject auth header on every request.
+  provider.fetch = async (req: ethers.FetchRequest | string): Promise<ethers.FetchResponse> => {
+    const auth = await buildAuthHeader(signer, address)
+    if (auth) {
+      if (typeof req === 'string') {
+        req = new ethers.FetchRequest(req)
+      }
+      req.setHeader('x-medivault-auth', auth)
+    }
+    return originalFetch(req)
+  }
+
+  return provider
+}
+
+/**
+ * Get a fresh auth header (or cached one) as a string, for use in raw fetch()
+ * calls to authed API routes. Returns null if signer or address is null.
+ */
+export async function getAuthHeader(
+  signer: ethers.Signer | null,
+  address: string | null,
+): Promise<string | null> {
+  return buildAuthHeader(signer, address)
+}
