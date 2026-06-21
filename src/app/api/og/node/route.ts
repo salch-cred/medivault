@@ -34,6 +34,12 @@ const STRIPPED_RESPONSE_HEADERS = [
 const MAX_PROXY_BYTES = 20 * 1024 * 1024
 const MAX_REDIRECTS = 3
 
+// Read-only JSON-RPC methods that are safe to proxy without auth.
+// zgs_getStatus is used by our client-side node-ranking code (proxy.ts)
+// to check storage node sync height — these calls can't easily inject
+// auth headers and the method is purely informational.
+const UNAUTHED_READ_METHODS = new Set(['zgs_getStatus', 'zgs_getFileInfo'])
+
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
     const p = ip.split('.').map(Number)
@@ -74,10 +80,6 @@ async function assertSafeTarget(raw: string): Promise<URL> {
   const host = url.hostname.toLowerCase()
   if (host === 'localhost' || host.endsWith('.local')) throw new Error('Blocked private target')
 
-  // Resolve hostnames and block private/internal IP ranges. Public 0G storage
-  // nodes may be IP-backed, so we cannot allowlist only *.0g.ai, but we must
-  // prevent this endpoint from becoming a generic SSRF proxy to metadata/admin
-  // services or private networks.
   const records = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true })
   if (!records.length || records.some((r) => isPrivateIp(r.address))) {
     throw new Error('Blocked private target')
@@ -92,10 +94,20 @@ async function readLimitedBody(req: Request): Promise<ArrayBuffer | undefined> {
   return req.arrayBuffer()
 }
 
-/**
- * Fetch with SSRF-safe redirect handling.
- * We manually follow redirects and re-validate each redirect target.
- */
+/** Check if a POST body contains only read-only methods that don't need auth. */
+function isReadOnlyBody(body: ArrayBuffer | undefined): boolean {
+  if (!body) return false
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body))
+    const reqs = Array.isArray(parsed) ? parsed : [parsed]
+    return reqs.every(
+      (r: any) => typeof r?.method === 'string' && UNAUTHED_READ_METHODS.has(r.method),
+    )
+  } catch {
+    return false
+  }
+}
+
 async function safeFetch(
   targetUrl: URL,
   method: string,
@@ -111,17 +123,13 @@ async function safeFetch(
     method,
     headers,
     body,
-    redirect: 'manual', // Don't auto-follow redirects — we validate each hop
+    redirect: 'manual',
   })
 
-  // Handle redirects manually so we can re-validate the target.
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location')
     if (!location) throw new Error('Redirect with no location header')
-
-    // Resolve relative redirects against the current URL.
     const redirectUrl = new URL(location, targetUrl)
-    // Re-validate the redirect target to prevent SSRF via redirect.
     const safeRedirectUrl = await assertSafeTarget(redirectUrl.toString())
     return safeFetch(safeRedirectUrl, method, headers, body, redirectCount + 1)
   }
@@ -131,12 +139,18 @@ async function safeFetch(
 
 async function handleProxy(req: Request) {
   try {
-    // Require authentication for node proxy access.
-    const auth = verifyAuth(req)
-    if (!auth.ok) return auth.response
+    const body = await readLimitedBody(req)
 
-    if (!checkRateLimit(auth.address, 'node-proxy', 30)) {
-      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
+    // Allow read-only storage node queries (zgs_getStatus, zgs_getFileInfo)
+    // without auth — these are used by client-side node ranking and the 0G SDK.
+    // All other requests require authentication.
+    if (!isReadOnlyBody(body)) {
+      const auth = verifyAuth(req)
+      if (!auth.ok) return auth.response
+
+      if (!checkRateLimit(auth.address, 'node-proxy', 30)) {
+        return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
+      }
     }
 
     const { searchParams } = new URL(req.url)
@@ -153,7 +167,6 @@ async function handleProxy(req: Request) {
       }
     })
 
-    const body = await readLimitedBody(req)
     const response = await safeFetch(targetUrl, req.method, headers, body)
 
     const responseBuffer = await response.arrayBuffer()
