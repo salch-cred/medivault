@@ -2,7 +2,6 @@
 
 import { motion } from 'framer-motion'
 import { ShieldCheck, Lock, KeyRound, Loader2 } from 'lucide-react'
-import { useWeb3ModalAccount } from '@web3modal/ethers/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { WalletConnect } from '@/components/wallet-connect'
 import { Disclaimer } from '@/components/disclaimer'
@@ -45,16 +44,12 @@ function friendlyWalletError(error: string): string {
 
 export function ConnectGate({ children }: { children: React.ReactNode }) {
   const { status, error } = useVault()
-  const { isConnected } = useWeb3ModalAccount()
 
   if (status === 'connected') return <>{children}</>
 
-  // On a page refresh, Web3Modal restores the wallet session before our vault
-  // re-derives its keys. In that window show a calm "reconnecting" state rather
-  // than telling the user to connect a wallet that is already connected. If our
-  // connect attempt errored (e.g. signature rejected) fall through to the full
-  // connect prompt so they can try again.
-  const reconnecting = !error && (status === 'connecting' || isConnected)
+  // Only show "reconnecting" when WE are actively connecting.
+  // Do NOT auto-trigger based on Web3Modal's isConnected state.
+  const reconnecting = !error && status === 'connecting'
 
   if (reconnecting) {
     return (

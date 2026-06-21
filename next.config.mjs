@@ -30,6 +30,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https:",
       "connect-src 'self' https://evmrpc.0g.ai https://indexer-storage-turbo.0g.ai https://keyvalue.immanuel.co wss://0g-chat-relay.0g.ai https://*.peerjs.com wss://*.peerjs.com https://*.walletconnect.org wss://*.walletconnect.org https://*.walletconnect.com wss://*.walletconnect.com",
       "frame-src 'self' https://verify.walletconnect.org https://verify.walletconnect.com https://secure.walletconnect.org https://secure.walletconnect.com https://*.walletconnect.org https://*.walletconnect.com",
+      "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",
@@ -40,7 +41,6 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
-  // Security headers applied to all routes.
   async headers() {
     return [
       {
@@ -49,12 +49,10 @@ const nextConfig = {
       },
     ]
   },
-  // pdf-parse and the 0G SDK pull in Node built-ins; keep them external on the server.
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse'],
   },
   webpack: (config, { isServer, webpack }) => {
-    // Browser bundlers need Node polyfills for the 0G storage SDK + ethers.
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,

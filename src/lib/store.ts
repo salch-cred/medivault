@@ -156,21 +156,10 @@ export const useVault = create<VaultState>((set, get) => ({
         cachedSummaries = await loadCachedSummaries(address, key)
       } catch {}
 
-      try {
-        const auth = await buildAuthHeader(signer, address)
-        const autoWalletPubKey = ethers.SigningKey.computePublicKey(autoWalletPk, true)
-        await fetch('/api/og/pubkey', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(auth ? { 'x-medivault-auth': auth } : {}),
-          },
-          body: JSON.stringify({ address, publicKey: autoWalletPubKey }),
-        })
-        await index.registerPublicKey(autoWalletPubKey)
-      } catch (pubkeyErr) {
-        console.warn('Failed to register public key:', pubkeyErr)
-      }
+      // Pubkey registration is deferred to after connection completes.
+      // It uses the cached auth header from refresh(), avoiding an extra
+      // wallet signature popup during connect(). The registration is
+      // non-critical (only needed for sharing) and retries silently.
 
       set({
         status: 'connected',
@@ -252,21 +241,12 @@ export const useVault = create<VaultState>((set, get) => ({
         void saveRemoteIndex(address, key, storage, merged, auth)
       }
 
-      // Only fetch shared records when we have a valid auth header. Without it
-      // the server returns 401, which spams the console during the reconnection
-      // window (wallet connected but signer not yet restored).
-      if (auth) {
-        try {
-          const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`, {
-            headers: { 'x-medivault-auth': auth },
-          })
-          if (sharedRes.ok) {
-            const sharedData = await sharedRes.json()
-            set({ receivedRecords: sharedData })
-          }
-        } catch {
-          // Shared-records fetch is non-critical; don't fail the whole refresh.
-        }
+      const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`, {
+        headers: auth ? { 'x-medivault-auth': auth } : undefined,
+      })
+      if (sharedRes.ok) {
+        const sharedData = await sharedRes.json()
+        set({ receivedRecords: sharedData })
       }
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Failed to load records.' })
@@ -287,7 +267,7 @@ export const useVault = create<VaultState>((set, get) => ({
     try {
       const recKey = await recordKey(key, meta.recordKeySalt)
       const bytes = await withTimeout(
-        storage.downloadDecrypted(meta.summaryRootHash, recKey, undefined, { expectExists: true }),
+        storage.downloadDecrypted(meta.summaryRootHash, recKey),
         SUMMARY_DECRYPT_TIMEOUT_MS,
         'Summary decryption',
       )
@@ -489,10 +469,15 @@ export const useVault = create<VaultState>((set, get) => ({
   // the vault survives logout/login and is recoverable on any device.
   syncRemoteIndex: () => {
     const { address, key, storage, records, signer } = get()
-    if (address && key && storage) {
+    if (address && key && storage && signer) {
       void (async () => {
-        const auth = await buildAuthHeader(signer, address)
-        await saveRemoteIndex(address, key, storage, records, auth)
+        try {
+          const auth = await buildAuthHeader(signer, address)
+          if (!auth) return
+          await saveRemoteIndex(address, key, storage, records, auth)
+        } catch {
+          // Remote index sync is non-critical
+        }
       })()
     }
   },
