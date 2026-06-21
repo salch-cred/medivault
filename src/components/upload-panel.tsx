@@ -89,7 +89,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setPct(75)
 
         // Use an authed provider so the RPC proxy accepts the balance check.
-        const provider = createAuthedProvider(signer, address, ZG.RPC_URL)
+        // createAuthedProvider is async — must be awaited.
+        const provider = await createAuthedProvider(signer, address, ZG.RPC_URL)
         const balance = await provider.getBalance(autoWalletAddress!)
         if (balance === 0n) {
           throw new Error('Insufficient 0G gas! Please click "Fund Auto-Wallet" in the status panel on the right.')
@@ -208,7 +209,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             e.preventDefault()
             setDragging(true)
           }}
-          onDragLeave={() => setDragging(false)}
+          onDragLeave={() => setDragging(false)
+          }
           onDrop={(e) => {
             e.preventDefault()
             setDragging(false)
@@ -219,7 +221,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors',
             dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/60',
             busy && 'pointer-events-none opacity-70',
-          )
+          )}
         >
           <input
             ref={inputRef}
