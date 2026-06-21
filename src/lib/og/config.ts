@@ -11,9 +11,16 @@
 // empty to disable KV reads (the index falls back to localStorage); set
 // NEXT_PUBLIC_OG_KV_NODE_URL to your own https KV endpoint to re-enable reads.
 
+const OG_MAINNET_INDEXER = 'https://indexer-storage-turbo.0g.ai'
+
 export const ZG = {
   RPC_URL: typeof window !== 'undefined' ? `${window.location.origin}/api/og/rpc` : 'https://evmrpc.0g.ai',
-  INDEXER_RPC: typeof window !== 'undefined' ? `${window.location.origin}/api/og/indexer` : 'https://indexer-storage-turbo.0g.ai',
+  // Use the official indexer directly in the browser. The 0G SDK sends several
+  // internal indexer request shapes during upload/download, and routing them
+  // through our auth/body-inspecting proxy can cause false 403s. Storage-node
+  // URLs returned by this indexer are still routed through /api/og/node by
+  // applyNodeProxy() to preserve CORS/HTTPS compatibility.
+  INDEXER_RPC: OG_MAINNET_INDEXER,
   KV_NODE_URL: process.env.NEXT_PUBLIC_OG_KV_NODE_URL || '',
   FLOW_CONTRACT: '0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526',
   CHAIN_ID: 16661,
