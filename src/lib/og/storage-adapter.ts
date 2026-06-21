@@ -21,6 +21,19 @@ import type { StorageAdapter } from './adapters'
 
 type Tuple<T> = [T, unknown]
 
+// 0G SDK upload() positional signature (typings can trail the runtime API):
+//   upload(file, blockchainRpc, signer, uploadOpts?, retryOpts?, txOpts?)
+// txOpts is { gasPrice?: bigint; gasLimit?: bigint } and, when gasPrice > 0,
+// is used verbatim for the on-chain Flow `submit` transaction.
+type SdkUpload = (
+  blob: unknown,
+  rpc: string,
+  signer: ethers.Signer,
+  uploadOpts: unknown,
+  retryOpts?: unknown,
+  txOpts?: { gasPrice?: bigint; gasLimit?: bigint },
+) => Promise<Tuple<{ txHash?: string } | string>>
+
 export class OgStorageAdapter implements StorageAdapter {
   private readonly indexer: Indexer
   private readonly signer: ethers.Signer
@@ -61,6 +74,107 @@ export class OgStorageAdapter implements StorageAdapter {
     }
   }
 
+  /** Current network gas price (bigint) from the signer's provider, or undefined. */
+  private async networkGasPrice(): Promise<bigint | undefined> {
+    try {
+      const provider = (this.signer as ethers.Signer & {
+        provider?: ethers.Provider | null
+      }).provider
+      if (!provider) return undefined
+      const feeData = await provider.getFeeData()
+      return feeData.gasPrice ?? undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Upload a prepared blob through the 0G SDK with smart, gas-aware retries.
+   *
+   * Why explicit gas handling: the SDK submits the Flow `submit` tx at the
+   * provider's suggested gasPrice when no gasPrice is supplied. Repeated
+   * attempts therefore reuse the same (latest) nonce at the same floor price,
+   * so the first attempt sticks in the mempool and every retry is rejected
+   * with "replacement fee too low" / REPLACEMENT_UNDERPRICED. We instead start
+   * slightly above floor and escalate each retry (>=110% is required to
+   * replace a pending tx), which also clears any tx stuck from earlier runs.
+   */
+  private async uploadWithRetry(
+    blob: unknown,
+    uploadOpts: unknown,
+  ): Promise<{ txHash?: string } | string | undefined> {
+    await this.assertIndexerHasNodes()
+
+    const floor = await this.networkGasPrice()
+    // First attempt: ~1.25x floor to avoid an immediate underprice rejection.
+    let gasPrice = floor !== undefined ? (floor * 125n) / 100n : undefined
+
+    const maxRetries = 6
+    let tx: { txHash?: string } | string | undefined
+    let lastErr: unknown
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const txOpts = gasPrice !== undefined ? { gasPrice } : undefined
+
+      const [attemptTx, attemptErr] = (await (
+        this.indexer as unknown as { upload: SdkUpload }
+      ).upload(
+        blob,
+        ZG.RPC_URL,
+        this.signer,
+        uploadOpts,
+        undefined,
+        txOpts,
+      )) as Tuple<{ txHash?: string } | string>
+
+      tx = attemptTx
+      lastErr = attemptErr
+      if (!lastErr) return tx
+
+      const errStr = String(lastErr)
+
+      // Permanent errors: never retry.
+      if (/insufficient funds|exceeds balance|invalid (sender|signature)|malformed/i.test(errStr)) {
+        throw new Error(errStr)
+      }
+
+      // Stuck-nonce / fee problems: bump gas and retry.
+      const isUnderpriced =
+        /replacement (fee too low|transaction underpriced)|replacement_underpriced|underpriced|fee too low|max fee per gas|nonce too low/i.test(
+          errStr,
+        )
+      // Generic network blips: also retryable (a bump is harmless).
+      const isTransient =
+        /network|timeout|connection|reset|ECONNREFUSED|ETIMEDOUT|fetch failed|socket hang up|502|503|504/i.test(
+          errStr,
+        )
+
+      if (!isUnderpriced && !isTransient) {
+        // Unknown error -- surface it rather than looping pointlessly.
+        throw new Error(errStr)
+      }
+
+      if (attempt < maxRetries - 1) {
+        // Ensure we have a base price even if the first lookup failed.
+        if (gasPrice === undefined) {
+          const f = await this.networkGasPrice()
+          gasPrice = f !== undefined ? (f * 160n) / 100n : undefined
+        } else {
+          // ~1.6x per retry: comfortably above the 110% replacement threshold.
+          gasPrice = (gasPrice * 160n) / 100n
+        }
+        const backoffMs = Math.min(1500 * 2 ** attempt, 12000)
+        console.warn(
+          `0G upload failed (${isUnderpriced ? 'underpriced/stuck-nonce' : 'transient'}); bumping gas to ${gasPrice ?? 'default'} and retrying in ${backoffMs}ms (${maxRetries - attempt - 1} left)`,
+          attemptErr,
+        )
+        await new Promise((r) => setTimeout(r, backoffMs))
+      }
+    }
+
+    throw new Error(String(lastErr))
+  }
+
   /** AES-256 encrypted upload of a File (browser) or in-memory bytes. */
   async uploadEncrypted(
     data: Uint8Array | File,
@@ -77,55 +191,13 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    // Surface indexer/network problems as a clear message instead of the
-    // cryptic deep-SDK "...reading 'trusted'" crash.
-    await this.assertIndexerHasNodes()
-
-    // Smart retry: differentiate transient (network) vs permanent errors.
-    // Transient errors get up to 5 retries with exponential backoff.
-    // Permanent errors (malformed key, invalid file) fail immediately.
-    let tx: unknown
-    let upErr: unknown
-    const maxRetries = 5
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const [attemptTx, attemptErr] = (await (this.indexer as unknown as {
-        upload: (
-          b: unknown,
-          rpc: string,
-          signer: ethers.Signer,
-          opts: unknown,
-        ) => Promise<Tuple<{ txHash?: string } | string>>
-      }).upload(blob, ZG.RPC_URL, this.signer, {
-        encryption: { type: 'aes256', key },
-        finalityRequired: false,
-      })) as Tuple<{ txHash?: string } | string>
-      
-      tx = attemptTx
-      upErr = attemptErr
-      if (!upErr) break
-      
-      const errStr = String(upErr)
-      // Check if this is a transient error (network, timeout, connection reset)
-      // vs a permanent error (invalid key, malformed data, insufficient funds).
-      const isTransient =
-        /network|timeout|connection|reset|ECONNREFUSED|ETIMEDOUT|fetch failed|socket hang up/i.test(errStr)
-      
-      if (!isTransient) {
-        // Permanent error -- don't waste time retrying.
-        throw new Error(errStr)
-      }
-      
-      if (attempt < maxRetries - 1) {
-        const backoffMs = Math.min(1500 * Math.pow(2, attempt), 12000)
-        console.warn(`0G upload failed (transient), retrying in ${backoffMs}ms... (${maxRetries - attempt - 1} attempts left)`, attemptErr)
-        await new Promise(r => setTimeout(r, backoffMs))
-      }
-    }
-    
-    if (upErr) throw new Error(String(upErr))
+    const tx = await this.uploadWithRetry(blob, {
+      encryption: { type: 'aes256', key },
+      finalityRequired: false,
+    })
 
     const txHash =
-      typeof tx === 'string' ? tx : (tx as { txHash?: string })?.txHash
+      typeof tx === 'string' ? tx : (tx as { txHash?: string } | undefined)?.txHash
     return { rootHash, txHash }
   }
 
@@ -162,20 +234,10 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    await this.assertIndexerHasNodes()
-
-    const [, upErr] = (await (this.indexer as unknown as {
-      upload: (
-        b: unknown,
-        rpc: string,
-        signer: ethers.Signer,
-        opts: unknown,
-      ) => Promise<Tuple<unknown>>
-    }).upload(mem, ZG.RPC_URL, this.signer, {
+    await this.uploadWithRetry(mem, {
       encryption: { type: 'ecies', recipientPubKey: compressed },
       finalityRequired: false,
-    })) as Tuple<unknown>
-    if (upErr) throw new Error(String(upErr))
+    })
     return { rootHash }
   }
 
