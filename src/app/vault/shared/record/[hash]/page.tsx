@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -22,6 +22,7 @@ import {
   HardDrive,
   Copy,
   Check,
+  CheckCircle2,
   AlertTriangle,
   Leaf,
   ClipboardList,
@@ -69,7 +70,7 @@ export default function SharedRecordPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { storage, autoWalletSigner } = useVault()
+  const { storage, autoWalletSigner, importReceivedRecord } = useVault()
 
   const hash = params.hash as string
   const senderNameParam = searchParams.get('senderName') || 'Unknown Patient'
@@ -86,7 +87,13 @@ export default function SharedRecordPage() {
   const [loadingDoc, setLoadingDoc] = useState(false)
   const [fileSize, setFileSize] = useState<number | null>(null)
   const [copiedHash, setCopiedHash] = useState(false)
+  const [savedId, setSavedId] = useState<string | null>(null)
   const [, setNowTick] = useState(0)
+
+  // Decrypted original bytes, kept so the manual Save button never re-downloads.
+  const originalBytesRef = useRef<Uint8Array | null>(null)
+  // Ensures the auto-load + vault-import runs exactly once per opened share.
+  const autoStartedRef = useRef(false)
 
   useEffect(() => {
     const t = setInterval(() => setNowTick((n) => n + 1), 30_000)
@@ -105,6 +112,27 @@ export default function SharedRecordPage() {
     setTimeout(() => setCopiedHash(false), 1500)
   }
 
+  // Turn decrypted bytes into a preview: decode text inline, or build a typed
+  // object URL so PDFs/images open and download in their native format.
+  function presentBytes(bytes: Uint8Array, mime?: string | null) {
+    originalBytesRef.current = bytes
+    setFileSize(bytes.byteLength)
+    const kind = fileKind(mime)
+    if (kind === 'text') {
+      setDocText(new TextDecoder().decode(bytes))
+      setDocUrl(null)
+      setDocKind('text')
+    } else {
+      const blob = new Blob([bytes as BlobPart], mime ? { type: mime } : undefined)
+      setDocUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(blob)
+      })
+      setDocText(null)
+      setDocKind(kind)
+    }
+  }
+
   useEffect(() => {
     let active = true
     async function decryptRecord() {
@@ -120,7 +148,7 @@ export default function SharedRecordPage() {
           throw new Error('Auto-Wallet private key not loaded')
         }
 
-        // ── Fast path ──────────────────────────────────────────
+        // ── Fast path ───────────────────────────────────────────
         // The sender also stashes a self-contained, client-side-encrypted copy
         // of this exact payload in the instant KV layer (keyed by the 0G root
         // hash). Reading it takes ~1s and never waits on 0G propagation, which
@@ -144,8 +172,8 @@ export default function SharedRecordPage() {
           console.warn('Instant share path unavailable, falling back to 0G:', fastErr)
         }
 
-        // Warm up 0G node/indexer selection so the fallback download (and any
-        // later original-file fetch) starts from a hot path.
+        // Warm up 0G node/indexer selection so the fallback download (and the
+        // auto original-file fetch) starts from a hot path.
         void storage.prewarm?.()
 
         // Fallback: downloadDecryptedShared is patient-by-default: it waits
@@ -186,6 +214,73 @@ export default function SharedRecordPage() {
     }
   }, [hash, storage, autoWalletSigner])
 
+  // ── Auto-ready + save-forever ────────────────────────────────────
+  // As soon as the record is decrypted, automatically download + decrypt the
+  // ORIGINAL file (so it is on-screen and ready with no clicks) and import it
+  // into THIS wallet's own vault permanently — re-encrypted under the
+  // recipient's own key and backed up to their 0G index. After this, the shared
+  // document stays in their wallet forever and opens instantly from their vault.
+  useEffect(() => {
+    if (!decryptedData) return
+    if (autoStartedRef.current) return
+    const rootHash = decryptedData.recordRootHash
+    const keyHex = decryptedData.recordKeyHex
+    if (!rootHash || !keyHex) return // summary-only share: nothing to auto-load
+    autoStartedRef.current = true
+
+    let active = true
+    ;(async () => {
+      try {
+        if (!storage) return
+        setLoadingDoc(true)
+        setDocStatus('Preparing your document…')
+        const recKey = ethers.getBytes(keyHex)
+        const bytes = await storage.downloadDecrypted(
+          rootHash,
+          recKey,
+          (m) => {
+            if (active) setDocStatus(m)
+          },
+          { expectExists: true },
+        )
+        if (!active) return
+        presentBytes(bytes, decryptedData.mimeType)
+
+        // Save into the recipient's own vault, permanently.
+        try {
+          const id = await importReceivedRecord({
+            shareHash: hash,
+            payload: {
+              title: decryptedData.title,
+              docType: decryptedData.docType,
+              date: decryptedData.date,
+              fileName: decryptedData.fileName ?? null,
+              mimeType: decryptedData.mimeType ?? null,
+            },
+            originalBytes: bytes,
+            summary: decryptedData.summary,
+          })
+          if (active && id) setSavedId(id)
+        } catch (impErr) {
+          console.warn('Could not save shared record to your vault:', impErr)
+        }
+      } catch (e) {
+        // Original not ready yet — the manual buttons remain available to retry.
+        console.warn('Auto-load of original failed (user can retry):', e)
+      } finally {
+        if (active) {
+          setLoadingDoc(false)
+          setDocStatus(null)
+        }
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decryptedData])
+
   async function loadOriginal(saveToDisk: boolean) {
     if (!storage || !decryptedData) return
     const rootHash = decryptedData.recordRootHash
@@ -194,41 +289,28 @@ export default function SharedRecordPage() {
       toast.error('The sender shared only the summary, not the original file.')
       return
     }
-    let bytes: Uint8Array
-    setLoadingDoc(true)
-    setDocStatus('Fetching original from 0G…')
-    try {
-      const recKey = ethers.getBytes(keyHex)
-      bytes = await storage.downloadDecrypted(rootHash, recKey, (m) => setDocStatus(m), { expectExists: true })
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      toast.error(msg || 'Could not load the original document')
+    let bytes = originalBytesRef.current
+    if (!bytes) {
+      setLoadingDoc(true)
+      setDocStatus('Fetching original from 0G…')
+      try {
+        const recKey = ethers.getBytes(keyHex)
+        bytes = await storage.downloadDecrypted(rootHash, recKey, (m) => setDocStatus(m), { expectExists: true })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        toast.error(msg || 'Could not load the original document')
+        setLoadingDoc(false)
+        setDocStatus(null)
+        return
+      }
       setLoadingDoc(false)
       setDocStatus(null)
-      return
     }
-    setLoadingDoc(false)
-    setDocStatus(null)
-    setFileSize(bytes.byteLength)
-
-    const mime = decryptedData.mimeType
-    const kind = fileKind(mime)
-    if (kind === 'text') {
-      setDocText(new TextDecoder().decode(bytes))
-      setDocUrl(null)
-      setDocKind('text')
-    } else {
-      const blob = new Blob([bytes as BlobPart], mime ? { type: mime } : undefined)
-      setDocUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev)
-        return URL.createObjectURL(blob)
-      })
-      setDocText(null)
-      setDocKind(kind)
-    }
+    presentBytes(bytes, decryptedData.mimeType)
 
     if (saveToDisk) {
       try {
+        const mime = decryptedData.mimeType
         const blob = new Blob([bytes as BlobPart], mime ? { type: mime } : undefined)
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -347,6 +429,17 @@ export default function SharedRecordPage() {
           </Button>
         </div>
       </motion.div>
+
+      {savedId ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <CheckCircle2 className="h-3.5 w-3.5" /> Saved to your vault — this document now stays in your wallet permanently and opens instantly.
+          <Link href={`/vault/record/${savedId}`} className="font-medium underline">Open in my vault</Link>
+        </div>
+      ) : hasOriginal ? (
+        <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving this document to your vault so it stays with you forever…
+        </div>
+      ) : null}
 
       {/* Patient / Sender Information */}
       <Card className="border-neutral-800 bg-neutral-950/40">
@@ -630,15 +723,21 @@ export default function SharedRecordPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {docKind === null ? (
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => loadOriginal(false)} disabled={loadingDoc} variant="outline">
-                  {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                  View original
-                </Button>
-                <Button onClick={() => loadOriginal(true)} disabled={loadingDoc} variant="outline">
-                  <Download className="h-4 w-4" /> Save file
-                </Button>
-              </div>
+              loadingDoc ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> {docStatus || 'Preparing your document…'}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => loadOriginal(false)} disabled={loadingDoc} variant="outline">
+                    {loadingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    View original
+                  </Button>
+                  <Button onClick={() => loadOriginal(true)} disabled={loadingDoc} variant="outline">
+                    <Download className="h-4 w-4" /> Save file
+                  </Button>
+                </div>
+              )
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -650,7 +749,7 @@ export default function SharedRecordPage() {
                 <OriginalPreview />
               </>
             )}
-            {loadingDoc && docStatus ? <p className="text-xs text-muted-foreground">{docStatus}</p> : null}
+            {loadingDoc && docStatus && docKind !== null ? <p className="text-xs text-muted-foreground">{docStatus}</p> : null}
             <p className="text-xs text-muted-foreground">Decrypted locally with the key the sender shared. PDFs and images open in their original format.</p>
           </CardContent>
         </Card>
