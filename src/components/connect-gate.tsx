@@ -1,7 +1,8 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { ShieldCheck, Lock, KeyRound } from 'lucide-react'
+import { ShieldCheck, Lock, KeyRound, Loader2 } from 'lucide-react'
+import { useWeb3ModalAccount } from '@web3modal/ethers/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { WalletConnect } from '@/components/wallet-connect'
 import { Disclaimer } from '@/components/disclaimer'
@@ -10,8 +11,47 @@ import { staggerContainer, staggerItem } from '@/lib/motion'
 
 export function ConnectGate({ children }: { children: React.ReactNode }) {
   const { status, error } = useVault()
+  const { isConnected } = useWeb3ModalAccount()
 
   if (status === 'connected') return <>{children}</>
+
+  // On a page refresh, Web3Modal restores the wallet session before our vault
+  // re-derives its keys. In that window show a calm "reconnecting" state rather
+  // than telling the user to connect a wallet that is already connected. If our
+  // connect attempt errored (e.g. signature rejected) fall through to the full
+  // connect prompt so they can try again.
+  const reconnecting = !error && (status === 'connecting' || isConnected)
+
+  if (reconnecting) {
+    return (
+      <motion.div
+        variants={staggerContainer(0.08, 0.05)}
+        initial="hidden"
+        animate="show"
+        className="mx-auto max-w-xl py-8 md:py-12"
+      >
+        <Card className="overflow-hidden">
+          <CardContent className="flex flex-col items-center gap-5 p-7 text-center md:p-9">
+            <motion.span
+              variants={staggerItem}
+              className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary md:h-16 md:w-16"
+            >
+              <Loader2 className="h-7 w-7 animate-spin md:h-8 md:w-8" />
+            </motion.span>
+            <motion.div variants={staggerItem}>
+              <h2 className="font-serif text-2xl tracking-tight md:text-3xl">
+                Reconnecting your vault…
+              </h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground md:text-[15px]">
+                Restoring your encrypted records. The first time you open the app in a
+                browser session you may be asked to sign once to unlock your keys.
+              </p>
+            </motion.div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div
