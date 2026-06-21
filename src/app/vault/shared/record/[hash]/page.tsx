@@ -42,6 +42,7 @@ import { LabResultsTable } from '@/components/lab-results-table'
 import { DOC_TYPE_LABELS, type ExtractionResult } from '@/lib/og/types'
 import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash, fileKind, downloadFileName } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
+import { eciesDecrypt, type EciesEnvelope } from '@/lib/og/ecies'
 
 const FADE_UP_INITIAL = { opacity: 0, y: 12 }
 const FADE_ANIMATE = { opacity: 1, y: 0 }
@@ -113,19 +114,43 @@ export default function SharedRecordPage() {
       }
 
       try {
-        // Warm up 0G node/indexer selection in parallel so the original-file
-        // fetch (if the user opens it) starts from a hot path.
-        void storage.prewarm?.()
-
         const wallet = autoWalletSigner as ethers.Wallet
         const privateKey = wallet.privateKey
         if (!privateKey) {
           throw new Error('Auto-Wallet private key not loaded')
         }
 
-        // downloadDecryptedShared is patient-by-default: it waits (with fast 3s
-        // polling, ~90s budget) for the just-shared file to propagate across the
-        // 0G indexer, reporting live status, instead of failing fast.
+        // ── Fast path ──────────────────────────────────────────
+        // The sender also stashes a self-contained, client-side-encrypted copy
+        // of this exact payload in the instant KV layer (keyed by the 0G root
+        // hash). Reading it takes ~1s and never waits on 0G propagation, which
+        // is what produced the “still registering on the 0G network” error. The
+        // blob is ECIES-encrypted to THIS wallet, so the server never sees
+        // plaintext. If it is missing (older shares) we fall back to 0G below.
+        if (active) setStatus('Fetching your secure record…')
+        try {
+          const r = await fetch(`/api/og/share-envelope?hash=${encodeURIComponent(hash)}`)
+          if (r.ok) {
+            const data = (await r.json()) as { envelope?: EciesEnvelope }
+            if (data?.envelope) {
+              if (active) setStatus('Decrypting securely on your device…')
+              const fast = await eciesDecrypt(privateKey, data.envelope)
+              const payload = JSON.parse(new TextDecoder().decode(fast)) as SharedPayload
+              if (active) setDecryptedData(payload)
+              return
+            }
+          }
+        } catch (fastErr) {
+          console.warn('Instant share path unavailable, falling back to 0G:', fastErr)
+        }
+
+        // Warm up 0G node/indexer selection so the fallback download (and any
+        // later original-file fetch) starts from a hot path.
+        void storage.prewarm?.()
+
+        // Fallback: downloadDecryptedShared is patient-by-default: it waits
+        // (fast 3s polling, ~90s budget) for the just-shared file to propagate
+        // across the 0G indexer, reporting live status, instead of failing fast.
         const bytes = await storage.downloadDecryptedShared(
           hash,
           privateKey,
