@@ -1,6 +1,53 @@
 /** @type {import('next').NextConfig} */
+const securityHeaders = [
+  {
+    key: 'X-Frame-Options',
+    value: 'DENY',
+  },
+  {
+    key: 'X-Content-Type-Options',
+    value: 'nosniff',
+  },
+  {
+    key: 'Referrer-Policy',
+    value: 'strict-origin-when-cross-origin',
+  },
+  {
+    key: 'Permissions-Policy',
+    value: 'camera=self, microphone=self, geolocation=self',
+  },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
+  },
+  {
+    key: 'Content-Security-Policy',
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self' https://evmrpc.0g.ai https://indexer-storage-turbo.0g.ai https://keyvalue.immanuel.co wss://0g-chat-relay.0g.ai https://*.peerjs.com wss://*.peerjs.com",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  },
+]
+
 const nextConfig = {
   reactStrictMode: true,
+  // Security headers applied to all routes.
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ]
+  },
   // pdf-parse and the 0G SDK pull in Node built-ins; keep them external on the server.
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse'],
