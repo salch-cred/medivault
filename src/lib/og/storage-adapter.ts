@@ -31,6 +31,36 @@ export class OgStorageAdapter implements StorageAdapter {
     applyNodeProxy(this.indexer)
   }
 
+  /**
+   * Pre-flight check: make sure the indexer actually returns trusted storage
+   * nodes before we kick off an upload. If the indexer/proxy is misconfigured
+   * or the network is unavailable, getShardedNodes() resolves to undefined and
+   * the SDK later crashes deep inside selectNodes with the opaque error
+   * "Cannot read properties of undefined (reading 'trusted')". This converts
+   * that into a clear, actionable message.
+   *
+   * Best-effort: a thrown error here (network/transient) is swallowed so the
+   * normal upload retry loop can handle it. We only hard-fail when the indexer
+   * is reachable AND explicitly reports zero available nodes.
+   */
+  private async assertIndexerHasNodes(): Promise<void> {
+    let trusted: unknown[] | undefined
+    try {
+      const sharded = await (this.indexer as unknown as {
+        getShardedNodes: () => Promise<{ trusted?: unknown[] } | undefined>
+      }).getShardedNodes()
+      trusted = sharded?.trusted
+    } catch {
+      // Network/transient error -- let the upload retry loop deal with it.
+      return
+    }
+    if (trusted !== undefined && (!Array.isArray(trusted) || trusted.length === 0)) {
+      throw new Error(
+        'The 0G storage indexer returned no available nodes right now. The network may be busy or temporarily unreachable -- please try again in a moment.',
+      )
+    }
+  }
+
   /** AES-256 encrypted upload of a File (browser) or in-memory bytes. */
   async uploadEncrypted(
     data: Uint8Array | File,
@@ -46,6 +76,10 @@ export class OgStorageAdapter implements StorageAdapter {
     }).merkleTree()) as Tuple<{ rootHash: () => string }>
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
+
+    // Surface indexer/network problems as a clear message instead of the
+    // cryptic deep-SDK "...reading 'trusted'" crash.
+    await this.assertIndexerHasNodes()
 
     // Smart retry: differentiate transient (network) vs permanent errors.
     // Transient errors get up to 5 retries with exponential backoff.
@@ -77,7 +111,7 @@ export class OgStorageAdapter implements StorageAdapter {
         /network|timeout|connection|reset|ECONNREFUSED|ETIMEDOUT|fetch failed|socket hang up/i.test(errStr)
       
       if (!isTransient) {
-        // Permanent error — don't waste time retrying.
+        // Permanent error -- don't waste time retrying.
         throw new Error(errStr)
       }
       
@@ -127,6 +161,8 @@ export class OgStorageAdapter implements StorageAdapter {
     }).merkleTree()) as Tuple<{ rootHash: () => string }>
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
+
+    await this.assertIndexerHasNodes()
 
     const [, upErr] = (await (this.indexer as unknown as {
       upload: (
