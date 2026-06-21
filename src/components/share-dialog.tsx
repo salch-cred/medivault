@@ -29,12 +29,47 @@ export function ShareDialog({
   meta: RecordMeta
   summary?: ExtractionResult
 }) {
-  const { storage, address: senderAddress, signer, getRecordKey } = useVault()
+  const {
+    storage,
+    address: senderAddress,
+    signer,
+    getRecordKey,
+    backupRecord,
+    uploadStatus,
+  } = useVault()
   const [doctorInput, setDoctorInput] = useState('')
   const [senderName, setSenderName] = useState('')
   const [sharing, setSharing] = useState(false)
   const [shareHash, setShareHash] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  async function ensureOriginalIsDurable(): Promise<boolean> {
+    if (!storage || !meta.rootHash) return false
+
+    // If this session already marked the record as stored, avoid an unnecessary
+    // 0G proof/read check and proceed immediately.
+    if (uploadStatus[meta.id] === 'stored') return true
+
+    toast.message('Checking that the original file is ready on 0G…')
+
+    // First, try to prove the root is already retrievable. This covers refreshed
+    // sessions where local uploadStatus is empty but the record is durable.
+    try {
+      const ok = await storage.verifyIntegrity(meta.rootHash, undefined, {
+        expectExists: true,
+      })
+      if (ok) return true
+    } catch (verifyErr) {
+      console.warn('0G readiness check failed before share:', verifyErr)
+    }
+
+    // If not yet retrievable, finish the pending backup from the locally cached
+    // original bytes. backupRecord returns false if the original bytes are no
+    // longer in memory, in which case the user should re-upload/open the file
+    // before sharing.
+    toast.message('Finishing the 0G backup before sharing…')
+    return backupRecord(meta)
+  }
 
   async function share() {
     if (!storage || !senderAddress) {
@@ -77,6 +112,13 @@ export function ShareDialog({
       }
 
       ethers.SigningKey.computePublicKey(resolvedPubKey, true)
+
+      const originalReady = await ensureOriginalIsDurable()
+      if (!originalReady) {
+        throw new Error(
+          'This record is still finishing its secure 0G backup. Keep this page open and try sharing again in a moment.',
+        )
+      }
 
       const recKey = await getRecordKey(meta)
       if (!recKey) {
