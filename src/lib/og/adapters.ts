@@ -5,11 +5,15 @@ import type { RecordMeta } from './types'
  * is OgStorageAdapter (real 0G SDK). No mock implementation exists.
  */
 export interface StorageAdapter {
-  /** AES-256 encrypt client-side, then upload ciphertext to 0G. */
+  /**
+   * AES-256 encrypt client-side, then upload ciphertext to 0G.
+   * `onProgress` receives raw 0G SDK status messages (tx submitted, waiting for
+   * storage node to sync, uploading segments, finalized) for live UI feedback.
+   */
   uploadEncrypted(
     data: Uint8Array | File,
     key: Uint8Array,
-    meta?: Record<string, unknown>,
+    onProgress?: (message: string) => void,
   ): Promise<{ rootHash: string; txHash?: string }>
 
   /** Download ciphertext from 0G and AES-256 decrypt client-side. */
