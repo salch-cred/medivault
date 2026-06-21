@@ -19,6 +19,7 @@ const ALLOWED_METHODS = new Set([
   'eth_getBlockByNumber',
   'eth_call',
   'eth_estimateGas',
+  'eth_feeData',
   'net_version',
   'net_listening',
   'eth_getStorageAt',
@@ -27,25 +28,36 @@ const ALLOWED_METHODS = new Set([
   'eth_getBlockByHash',
 ])
 
+// Read-only methods that are safe to expose without auth. The 0G SDK makes
+// internal fetch() calls to this proxy during upload() and downloadToBlob()
+// that cannot be modified to include auth headers. These methods are all
+// benign reads — an attacker gains nothing from calling them.
+// Write methods (eth_sendRawTransaction) are NOT in ALLOWED_METHODS at all.
+const UNAUTHED_READ_METHODS = new Set([
+  'eth_chainId',
+  'eth_blockNumber',
+  'eth_gasPrice',
+  'eth_getBalance',
+  'eth_getTransactionCount',
+  'eth_estimateGas',
+  'eth_feeData',
+  'net_version',
+  'net_listening',
+  'eth_getBlockByNumber',
+  'eth_getBlockByHash',
+  'eth_getTransactionReceipt',
+])
+
 const MAX_BATCH_SIZE = 10
 const MAX_BODY_BYTES = 32 * 1024 // 32 KB — JSON-RPC payloads should be small
 
 export async function POST(req: Request) {
   try {
-    // Require authentication for RPC proxy access.
-    const auth = verifyAuth(req)
-    if (!auth.ok) return auth.response
-
-    if (!checkRateLimit(auth.address, 'rpc', 60)) {
-      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
-    }
-
     const bodyText = await req.text()
     if (bodyText.length > MAX_BODY_BYTES) {
       return NextResponse.json({ error: 'Request too large.' }, { status: 413 })
     }
 
-    // Parse and validate the JSON-RPC request to restrict to allowed methods.
     let rpcReq: unknown
     try {
       rpcReq = JSON.parse(bodyText)
@@ -53,12 +65,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
     }
 
-    // Handle single request or batch request.
     const requests = Array.isArray(rpcReq) ? rpcReq : [rpcReq]
     if (requests.length > MAX_BATCH_SIZE) {
       return NextResponse.json({ error: 'Batch too large.' }, { status: 400 })
     }
 
+    // Validate methods and determine if auth is needed.
+    let needsAuth = false
     for (const r of requests) {
       const method = (r as Record<string, unknown>)?.method
       if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
@@ -66,6 +79,20 @@ export async function POST(req: Request) {
           { error: 'Method not allowed.' },
           { status: 403 },
         )
+      }
+      if (!UNAUTHED_READ_METHODS.has(method)) {
+        needsAuth = true
+      }
+    }
+
+    // Only require auth for methods that could expose contract state or logs.
+    // Read-only SDK-internal methods (balance, gas, nonce, blockNumber) are exempt.
+    if (needsAuth) {
+      const auth = verifyAuth(req)
+      if (!auth.ok) return auth.response
+
+      if (!checkRateLimit(auth.address, 'rpc', 60)) {
+        return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
       }
     }
 
