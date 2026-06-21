@@ -4,6 +4,11 @@
 // vault can rebuild from 0G with NO central database. We keep a reserved
 // "record ids" list key per owner so list() can enumerate, plus one key per
 // record id holding its RecordMeta JSON.
+//
+// NOTE: 0G has no public mainnet KV node (it is a self-hosted service). When
+// ZG.KV_NODE_URL is empty/invalid we skip KV reads entirely and rely on the
+// localStorage fallback below -- KV WRITES still go to 0G storage nodes, so the
+// metadata is recoverable once a KV node is available.
 
 import { ethers } from 'ethers'
 import {
@@ -39,7 +44,10 @@ function decodeBase64Safe(value: string): Uint8Array | null {
 export class KvIndexAdapter implements IndexAdapter {
   private readonly signer: ethers.Signer
   private readonly indexer: Indexer
-  private readonly kv: KvClient
+  // Only set when a valid https KV node is configured; otherwise KV reads are
+  // disabled and we fall back to localStorage.
+  private readonly kv: KvClient | null
+  private readonly kvEnabled: boolean
   private readonly owner: string
   private readonly streamId: string
 
@@ -49,7 +57,11 @@ export class KvIndexAdapter implements IndexAdapter {
     this.streamId = deriveStreamId(owner)
     this.indexer = new Indexer(ZG.INDEXER_RPC)
     applyNodeProxy(this.indexer) // shared proxy — no longer duplicated inline
-    this.kv = new KvClient(ZG.KV_NODE_URL)
+
+    // Require an https URL: an http KV node would be blocked as mixed content
+    // on our https origin anyway. Empty/invalid => KV reads disabled.
+    this.kvEnabled = /^https:\/\//i.test(ZG.KV_NODE_URL)
+    this.kv = this.kvEnabled ? new KvClient(ZG.KV_NODE_URL) : null
   }
 
   private saveToLocalStorage(record: RecordMeta) {
@@ -107,6 +119,9 @@ export class KvIndexAdapter implements IndexAdapter {
   }
 
   private async readRaw(key: string): Promise<Uint8Array | null> {
+    // No configured KV node => skip the network entirely (prevents
+    // ERR_NAME_NOT_RESOLVED spam). Callers fall back to localStorage.
+    if (!this.kvEnabled || !this.kv) return null
     try {
       const value = await (this.kv as unknown as {
         getValue: (streamId: string, key: Uint8Array) => Promise<unknown>
@@ -143,6 +158,11 @@ export class KvIndexAdapter implements IndexAdapter {
     // Save to local storage first as a guaranteed client-side fallback
     this.saveToLocalStorage(record)
 
+    // Skip the on-chain KV write when KV reads are disabled: without a KV node
+    // the data can't be read back, so the write would only burn gas. The
+    // localStorage fallback above keeps the index working.
+    if (!this.kvEnabled) return
+
     try {
       const ids = await this.readIdList()
       const nextIds = ids.includes(record.id) ? ids : [...ids, record.id]
@@ -158,6 +178,9 @@ export class KvIndexAdapter implements IndexAdapter {
   }
 
   async registerPublicKey(publicKey: string): Promise<void> {
+    // Public-key registration is only useful for KV-based discovery; skip it
+    // (and its gas cost) when KV is disabled.
+    if (!this.kvEnabled) return
     try {
       const enc = (v: string) => new TextEncoder().encode(v)
       await this.write([
