@@ -59,7 +59,10 @@ export function ShareDialog({
       let resolvedPubKey = ''
 
       if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
-        const lookupRes = await fetch(`/api/og/pubkey?address=${encodeURIComponent(targetDoc)}`)
+        const lookupRes = await fetch(
+          `/api/og/pubkey?address=${encodeURIComponent(targetDoc)}`,
+          { headers: { 'x-medivault-auth': auth } },
+        )
         if (!lookupRes.ok) {
           toast.error('Recipient has not connected to MediVault', {
             description: 'The person you are sharing with needs to open MediVault and connect their wallet at least once to register their secure encryption key. Once they do, you can share files with them!',
