@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { ethers } from 'ethers'
 
-import { deriveVaultKey, deriveAutoWalletPk, recordKey, clearMasterSeed, recoverUserPublicKey } from '@/lib/og/crypto'
+import { deriveVaultKey, deriveAutoWalletPk, recordKey, clearMasterSeed } from '@/lib/og/crypto'
 import { OgStorageAdapter } from '@/lib/og/storage-adapter'
 import { KvIndexAdapter } from '@/lib/og/kv-index-adapter'
 import {
@@ -18,6 +18,24 @@ import { ZG } from '@/lib/og/config'
 import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
 
 type Status = 'disconnected' | 'connecting' | 'connected'
+
+const SUMMARY_DECRYPT_TIMEOUT_MS = 25_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
+}
 
 type VaultState = {
   status: Status
@@ -43,7 +61,6 @@ type VaultState = {
   refresh: () => Promise<void>
   loadSummary: (meta: RecordMeta) => Promise<ExtractionResult | null>
   addRecord: (meta: RecordMeta, summary: ExtractionResult) => void
-  /** Resolve the AES key to decrypt a given record (per-record or legacy master). */
   getRecordKey: (meta: RecordMeta) => Promise<Uint8Array | null>
   setLanguage: (lang: string) => void
   setEli5: (v: boolean) => void
@@ -76,34 +93,28 @@ export const useVault = create<VaultState>((set, get) => ({
       const key = await deriveVaultKey(signer)
       const autoWalletPk = await deriveAutoWalletPk(signer)
 
-      // Use deterministic auto-wallet for gas/transactions
       const rpcProvider = new ethers.JsonRpcProvider(ZG.RPC_URL, {
         chainId: ZG.CHAIN_ID,
-        name: ZG.CHAIN_NAME
+        name: ZG.CHAIN_NAME,
       }, { staticNetwork: true })
       const storageSigner = new ethers.Wallet(autoWalletPk, rpcProvider)
 
       const storage = new OgStorageAdapter(storageSigner)
       const index = new KvIndexAdapter(storageSigner, address)
-      
-      // Load from local cache immediately so UI doesn't look empty. Cache is
-      // AES-GCM encrypted with the vault key, so PHI never sits in localStorage
-      // in plaintext. If decryption fails (different wallet / tampered) we
-      // silently rebuild from 0G.
+
       let cachedRecords: RecordMeta[] = []
       let cachedSummaries: Record<string, ExtractionResult> = {}
       try {
         cachedRecords = await loadCachedRecords(address, key)
         cachedSummaries = await loadCachedSummaries(address, key)
-      } catch (e) {}
+      } catch {}
 
-      // Register Auto-Wallet public key on the backend so others can encrypt shares for us
       try {
         const autoWalletPubKey = ethers.SigningKey.computePublicKey(autoWalletPk, true)
         await fetch('/api/og/pubkey', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address, publicKey: autoWalletPubKey })
+          body: JSON.stringify({ address, publicKey: autoWalletPubKey }),
         })
         await index.registerPublicKey(autoWalletPubKey)
       } catch (pubkeyErr) {
@@ -134,8 +145,6 @@ export const useVault = create<VaultState>((set, get) => ({
 
   disconnect: () => {
     const { address } = get()
-    // Wipe all PHI caches so a shared device doesn't leak the previous user's
-    // decrypted records or the burner private key.
     if (address) clearAddressCache(address)
     clearBurnerKey()
     clearMasterSeed()
@@ -161,11 +170,8 @@ export const useVault = create<VaultState>((set, get) => ({
     try {
       const networkRecords = await index.list(address)
       set({ records: networkRecords, error: null })
-      if (key) {
-        await saveCachedRecords(address, key, networkRecords)
-      }
+      if (key) await saveCachedRecords(address, key, networkRecords)
 
-      // Fetch records shared WITH this user/doctor
       const sharedRes = await fetch(`/api/og/share?address=${encodeURIComponent(address)}`)
       if (sharedRes.ok) {
         const sharedData = await sharedRes.json()
@@ -181,25 +187,22 @@ export const useVault = create<VaultState>((set, get) => ({
   loadSummary: async (meta) => {
     const { storage, key, summaries, address } = get()
     if (summaries[meta.id]) return summaries[meta.id]
-
-    // Summaries are loaded exclusively from 0G decentralized storage.
-    // Previously they were cached in a public third-party key-value store
-    // (keyvalue.immanuel.co) which leaked decrypted PHI to anyone who guessed
-    // the hardcoded API key. That has been removed entirely.
-
     if (!storage || !key || !meta.summaryRootHash) return null
+
     try {
       const recKey = await recordKey(key, meta.recordKeySalt)
-      const bytes = await storage.downloadDecrypted(meta.summaryRootHash, recKey)
+      const bytes = await withTimeout(
+        storage.downloadDecrypted(meta.summaryRootHash, recKey),
+        SUMMARY_DECRYPT_TIMEOUT_MS,
+        'Summary decryption',
+      )
       const parsed = JSON.parse(new TextDecoder().decode(bytes)) as ExtractionResult
       const newSummaries = { ...get().summaries, [meta.id]: parsed }
       set({ summaries: newSummaries })
-
-      if (address) {
-        await saveCachedSummaries(address, key, newSummaries)
-      }
+      if (address) await saveCachedSummaries(address, key, newSummaries)
       return parsed
-    } catch {
+    } catch (err) {
+      console.warn('Failed to load/decrypt summary:', err)
       return null
     }
   },
@@ -208,13 +211,7 @@ export const useVault = create<VaultState>((set, get) => ({
     const { address, records, summaries, key } = get()
     const newRecords = [meta, ...records.filter((r) => r.id !== meta.id)]
     const newSummaries = { ...summaries, [meta.id]: summary }
-    set({
-      records: newRecords,
-      summaries: newSummaries,
-    })
-
-    // No longer syncing to keyvalue.immanuel.co — summaries live only on
-    // 0G Storage (encrypted) and the encrypted localStorage cache.
+    set({ records: newRecords, summaries: newSummaries })
 
     if (address && key) {
       void saveCachedRecords(address, key, newRecords)
