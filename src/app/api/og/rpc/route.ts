@@ -46,6 +46,9 @@ const UNAUTHED_READ_METHODS = new Set([
   'eth_getBlockByNumber',
   'eth_getBlockByHash',
   'eth_getTransactionReceipt',
+  'eth_call',
+  'eth_getCode',
+  'eth_getStorageAt',
 ])
 
 const MAX_BATCH_SIZE = 10
@@ -85,8 +88,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Only require auth for methods that could expose contract state or logs.
-    // Read-only SDK-internal methods (balance, gas, nonce, blockNumber) are exempt.
+    // Only require auth for eth_getLogs (could be used for data exfiltration).
+    // All other allowed methods are read-only and safe to expose without auth
+    // since the 0G SDK makes internal calls that can't carry auth headers.
+    // Write methods (eth_sendRawTransaction) are NOT in ALLOWED_METHODS at all.
     if (needsAuth) {
       const auth = verifyAuth(req)
       if (!auth.ok) return auth.response
