@@ -42,11 +42,11 @@ export function ShareDialog({
     const targetDoc = doctorInput.trim()
     const name = senderName.trim()
     if (!targetDoc) {
-      toast.error('Enter the doctor's wallet address.')
+      toast.error('Enter the recipient\'s wallet address.')
       return
     }
     if (!name) {
-      toast.error('Enter your name so the doctor knows who sent it.')
+      toast.error('Enter your name so the recipient knows who sent it.')
       return
     }
     try {
@@ -74,7 +74,7 @@ export function ShareDialog({
       ethers.SigningKey.computePublicKey(resolvedPubKey, true)
       
       // Derive the per-record AES key so we can include it in the share
-      // payload — the doctor needs it to decrypt the original document
+      // payload \u2014 the recipient needs it to decrypt the original document
       // from 0G Storage.
       const recKey = await getRecordKey(meta)
       if (!recKey) {
@@ -86,7 +86,7 @@ export function ShareDialog({
       const sharedAt = new Date().toISOString()
       
       // Include both the AI summary AND the original record's root hash +
-      // AES key so the doctor can access the source document on 0G, not
+      // AES key so the recipient can access the source document on 0G, not
       // just the AI's interpretation of it.
       const payload = {
         title: meta.title,
@@ -96,7 +96,7 @@ export function ShareDialog({
         senderName: name,
         senderAddress,
         summary: summary ?? null,
-        // The doctor needs these to download+decrypt the original record:
+        // The recipient needs these to download+decrypt the original record:
         recordRootHash: meta.rootHash,
         recordKeySalt: meta.recordKeySalt ?? null,
         recordKeyHex: ethers.hexlify(recKey),
@@ -104,7 +104,7 @@ export function ShareDialog({
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
       const { rootHash } = await storage.shareToRecipient(bytes, resolvedPubKey)
       
-      // Register share event on the backend registry so it shows in doctor's dashboard
+      // Register share event on the backend registry so it shows in recipient's dashboard
       const regRes = await fetch('/api/og/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -121,12 +121,12 @@ export function ShareDialog({
       })
       
       if (!regRes.ok) {
-        throw new Error('Successfully stored on 0G, but failed to notify doctor dashboard.')
+        throw new Error('Successfully stored on 0G, but failed to notify recipient dashboard.')
       }
 
       setShareHash(rootHash)
-      toast.success('Encrypted securely and shared directly to the doctor's dashboard!')
-    }catch(e){
+      toast.success('Encrypted securely and shared directly to the recipient\'s dashboard!')
+    } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Share failed')
     } finally {
       setSharing(false)
@@ -144,7 +144,7 @@ export function ShareDialog({
         <DialogHeader>
           <DialogTitle>Share securely with family, friends, or doctors</DialogTitle>
           <DialogDescription>
-            Re-encrypts this record securely to the recipient's key and posts it directly to their dashboard.
+            Re-encrypts this record securely to the recipient\'s key and posts it directly to their dashboard.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -158,7 +158,7 @@ export function ShareDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="doctorAddress">Recipient's Wallet Address</Label>
+            <Label htmlFor="doctorAddress">Recipient\'s Wallet Address</Label>
             <Input
               id="doctorAddress"
               placeholder="0x... (EVM wallet address of family, friend, or doctor)"
@@ -166,7 +166,7 @@ export function ShareDialog({
               onChange={(e) => setDoctorInput(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Enter the recipient's wallet address. They must have connected to MediVault at least once.
+              Enter the recipient\'s wallet address. They must have connected to MediVault at least once.
             </p>
           </div>
         </div>

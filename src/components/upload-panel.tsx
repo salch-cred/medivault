@@ -148,7 +148,6 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
     [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, onUploaded],
   )
 
-
   return (
     <Card>
       <CardContent className="space-y-4 p-6">
@@ -160,8 +159,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           <OptionsBar />
         </div>
         <motion.div
-          whileHover={!busy ? { scale: 1.01 } : {}}
-          whileTap={!busy ? { scale: 0.99 } : {}}
+          whileHover={!busy ? { scale: 1.01 } : undefined}
+          whileTap={!busy ? { scale: 0.99 } : undefined}
           role="button"
           tabIndex={0}
           onClick={() => !busy && inputRef.current?.click()}
@@ -206,9 +205,9 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           <AnimatePresence mode="wait">
             <motion.p
               key={stage}
-              initial= opacity: 0, y: 5 
+              initial= opacity: 0, y: 4 
               animate= opacity: 1, y: 0 
-              exit= opacity: 0, y: -5 
+              exit= opacity: 0, y: -4 
               transition= duration: 0.2 
               className="mt-3 font-medium"
             >
