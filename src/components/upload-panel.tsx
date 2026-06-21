@@ -39,7 +39,7 @@ const PROGRESS_INITIAL = { opacity: 0 }
 const PROGRESS_ANIMATE = { opacity: 1 }
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, syncRemoteIndex } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [detail, setDetail] = useState('')
@@ -155,14 +155,17 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             setUploadStatus(meta.id, 'stored')
             // File + summary are on 0G -> publish the durable, cross-device index
             // so this record survives logout/login and is restorable anywhere.
-            syncRemoteIndex()
+            useVault.getState().syncRemoteIndex()
             toast.success('Backed up to 0G ✓', {
               description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
             })
           } catch (bgErr) {
-            console.error('Background 0G backup failed:', bgErr)
-            setUploadStatus(meta.id, 'failed')
-            toast.error('0G backup failed — open the record to retry.')
+            console.error('Background 0G backup failed; auto-retrying until it lands:', bgErr)
+            // Don't give up — keep retrying automatically in the background until
+            // the record is permanently on 0G. The UI stays in 'pending'.
+            setUploadStatus(meta.id, 'pending')
+            toast.message('0G backup is taking a moment — auto-retrying in the background…')
+            void autoBackup(meta)
           }
         })()
       } catch (e) {
@@ -172,7 +175,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, setUploadStatus, syncRemoteIndex, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, onUploaded],
   )
 
   return (

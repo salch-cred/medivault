@@ -23,6 +23,10 @@ type BackupStatus = 'pending' | 'stored' | 'failed'
 
 const SUMMARY_DECRYPT_TIMEOUT_MS = 25_000
 
+// Records currently in an automatic backup-retry loop. Module-level so a single
+// loop runs per record id even across component re-mounts / re-renders.
+const autoBackupInFlight = new Set<string>()
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms)
@@ -60,8 +64,9 @@ type VaultState = {
   originals: Record<string, Uint8Array>
   // Background 0G-backup status per record id. Uploads complete optimistically
   // (record shown instantly from local cache) while the real on-chain storage
-  // finalizes in the background. 'pending' while uploading, 'stored' on
-  // success, 'failed' if the background upload errored (retry via backupRecord).
+  // finalizes in the background. 'pending' while uploading/retrying, 'stored'
+  // on success, 'failed' only when we genuinely can't retry (original bytes no
+  // longer in memory).
   uploadStatus: Record<string, BackupStatus>
   // Ids whose summary failed to load this session (e.g. ciphertext never
   // successfully stored on 0G during the earlier broken era). We short-circuit
@@ -84,6 +89,7 @@ type VaultState = {
   getCachedOriginal: (id: string) => Uint8Array | null
   setUploadStatus: (id: string, status: BackupStatus) => void
   backupRecord: (meta: RecordMeta) => Promise<boolean>
+  autoBackup: (meta: RecordMeta) => Promise<void>
   syncRemoteIndex: () => void
   getRecordKey: (meta: RecordMeta) => Promise<Uint8Array | null>
   setLanguage: (lang: string) => void
@@ -297,9 +303,9 @@ export const useVault = create<VaultState>((set, get) => ({
     set({ uploadStatus: { ...get().uploadStatus, [id]: status } })
   },
 
-  // Retry the background 0G storage of a record from its locally-cached
-  // original bytes + summary. Works within the session the upload happened in
-  // (the original cache is in-memory). Returns true on success.
+  // Single attempt to store a record's original + summary on 0G from the
+  // locally-cached original bytes. Returns true on success. Used by autoBackup
+  // (the retry loop) and the upload flow.
   backupRecord: async (meta) => {
     const { storage, index, summaries } = get()
     if (!storage) return false
@@ -327,6 +333,47 @@ export const useVault = create<VaultState>((set, get) => ({
       console.error('Background 0G backup failed:', e)
       get().setUploadStatus(meta.id, 'failed')
       return false
+    }
+  },
+
+  // Automatically retry the 0G backup with capped exponential backoff until it
+  // succeeds. The user never has to click 'retry' -- once the network (or gas)
+  // recovers, the next attempt lands and the record is permanently on 0G.
+  autoBackup: async (meta) => {
+    if (autoBackupInFlight.has(meta.id)) return
+    autoBackupInFlight.add(meta.id)
+    try {
+      let delay = 1500
+      const MAX_DELAY = 20_000
+      for (;;) {
+        // Re-uploading needs the original bytes (kept in memory). If they're
+        // gone (e.g. a full page reload before the backup finished) we can't
+        // retry from here -> surface 'failed' and stop the loop.
+        if (!get().getCachedOriginal(meta.id)) {
+          get().setUploadStatus(meta.id, 'failed')
+          return
+        }
+        const ok = await get().backupRecord(meta)
+        if (ok) return
+        // Still failing -> keep the optimistic 'pending' look (we ARE retrying)
+        // rather than scaring the user with a 'failed' badge.
+        get().setUploadStatus(meta.id, 'pending')
+        // If the auto-wallet is simply out of gas, retrying fast is pointless --
+        // back off to the max interval so a later top-up is picked up
+        // automatically (the very next attempt will then succeed).
+        try {
+          const { autoWalletSigner, autoWalletAddress } = get()
+          const provider = (autoWalletSigner as (ethers.Signer & { provider?: ethers.Provider | null }) | null)?.provider
+          if (provider && autoWalletAddress) {
+            const bal = await provider.getBalance(autoWalletAddress)
+            if (bal === 0n) delay = MAX_DELAY
+          }
+        } catch {}
+        await new Promise((r) => setTimeout(r, delay))
+        delay = Math.min(Math.round(delay * 1.6), MAX_DELAY)
+      }
+    } finally {
+      autoBackupInFlight.delete(meta.id)
     }
   },
 

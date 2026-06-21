@@ -53,7 +53,7 @@ const FAST_TRANSITION = { duration: 0.2 }
 const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
 
 function RecordView({ meta }: { meta: RecordMeta }) {
-  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal, uploadStatus, backupRecord } = useVault()
+  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal, uploadStatus, autoBackup } = useVault()
   const [summary, setSummary] = useState<ExtractionResult | undefined>(summaries[meta.id])
   const [loadingSummary, setLoadingSummary] = useState(!summaries[meta.id])
   const [summaryFailed, setSummaryFailed] = useState(false)
@@ -77,6 +77,16 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     const t = setInterval(() => setNowTick((n) => n + 1), 30_000)
     return () => clearInterval(t)
   }, [])
+
+  // Auto-retry the 0G backup until it succeeds — the user never has to click.
+  // Runs whenever the record is mid-backup or stalled AND we still have the
+  // original bytes in memory to re-upload. autoBackup() dedupes its own loop.
+  useEffect(() => {
+    if ((backupState === 'pending' || backupState === 'failed') && getCachedOriginal(meta.id)) {
+      void autoBackup(meta)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backupState, meta.id])
 
   function copyHash(h: string) {
     navigator.clipboard.writeText(h)
@@ -124,14 +134,11 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta.id])
 
-  async function retryBackup() {
+  function retryBackup() {
     setBackingUp(true)
-    try {
-      const ok = await backupRecord(meta)
-      toast[ok ? 'success' : 'error'](ok ? 'Backed up to 0G ✓' : 'Backup failed — please try again.')
-    } finally {
-      setBackingUp(false)
-    }
+    toast.message('Retrying 0G backup — it will keep trying automatically until it succeeds.')
+    void autoBackup(meta)
+    setTimeout(() => setBackingUp(false), 1500)
   }
 
   async function verify() {
@@ -271,17 +278,17 @@ function RecordView({ meta }: { meta: RecordMeta }) {
 
         {backupState === 'pending' ? (
           <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-            <CloudUpload className="h-3.5 w-3.5 animate-pulse" /> Backing up to 0G decentralized storage in the background… You can keep using your vault.
+            <CloudUpload className="h-3.5 w-3.5 animate-pulse" /> Backing up to 0G decentralized storage… auto-retrying until it’s permanently saved. You can keep using your vault.
           </div>
         ) : backupState === 'stored' ? (
           <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             <CheckCircle2 className="h-3.5 w-3.5" /> Backed up to 0G decentralized storage.
           </div>
         ) : backupState === 'failed' ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-            <AlertTriangle className="h-3.5 w-3.5" /> The 0G backup didn’t finish.
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="h-3.5 w-3.5" /> Finishing your 0G backup — retrying automatically.
             <Button onClick={retryBackup} disabled={backingUp} variant="outline" size="sm" className="h-6 px-2 text-xs">
-              {backingUp ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Retry backup
+              {backingUp ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Retry now
             </Button>
           </div>
         ) : null}
@@ -347,9 +354,9 @@ function RecordView({ meta }: { meta: RecordMeta }) {
                   </li>
                 ) : null}
                 <li className="relative">
-                  <span className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ${backupState === 'failed' ? 'bg-red-500' : backupState === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                  <p className="text-sm font-medium">{backupState === 'failed' ? 'Backup incomplete' : backupState === 'pending' ? 'Backing up to 0G…' : 'Secured on 0G network'}</p>
-                  <p className="text-xs text-muted-foreground">{backupState === 'pending' ? 'In progress' : backupState === 'failed' ? 'Needs retry' : 'Encrypted & distributed across storage nodes'}</p>
+                  <span className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ${backupState === 'failed' ? 'bg-amber-500' : backupState === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <p className="text-sm font-medium">{backupState === 'failed' ? 'Finishing backup…' : backupState === 'pending' ? 'Backing up to 0G…' : 'Secured on 0G network'}</p>
+                  <p className="text-xs text-muted-foreground">{backupState === 'pending' ? 'In progress' : backupState === 'failed' ? 'Retrying automatically' : 'Encrypted & distributed across storage nodes'}</p>
                 </li>
               </ol>
             </CardContent>
