@@ -19,6 +19,8 @@ import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
 
 type Status = 'disconnected' | 'connecting' | 'connected'
 
+type BackupStatus = 'pending' | 'stored' | 'failed'
+
 const SUMMARY_DECRYPT_TIMEOUT_MS = 25_000
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -56,6 +58,11 @@ type VaultState = {
   // localStorage quota issues with large files; on a full reload we fall back
   // to a 0G download (which uses the propagation-aware read-retry).
   originals: Record<string, Uint8Array>
+  // Background 0G-backup status per record id. Uploads complete optimistically
+  // (record shown instantly from local cache) while the real on-chain storage
+  // finalizes in the background. 'pending' while uploading, 'stored' on
+  // success, 'failed' if the background upload errored (retry via backupRecord).
+  uploadStatus: Record<string, BackupStatus>
   // Ids whose summary failed to load this session (e.g. ciphertext never
   // successfully stored on 0G during the earlier broken era). We short-circuit
   // these so the vault page doesn't re-download+retry them on every render and
@@ -75,6 +82,8 @@ type VaultState = {
   addRecord: (meta: RecordMeta, summary: ExtractionResult) => void
   cacheOriginal: (id: string, bytes: Uint8Array) => void
   getCachedOriginal: (id: string) => Uint8Array | null
+  setUploadStatus: (id: string, status: BackupStatus) => void
+  backupRecord: (meta: RecordMeta) => Promise<boolean>
   getRecordKey: (meta: RecordMeta) => Promise<Uint8Array | null>
   setLanguage: (lang: string) => void
   setEli5: (v: boolean) => void
@@ -95,6 +104,7 @@ export const useVault = create<VaultState>((set, get) => ({
   records: [],
   summaries: {},
   originals: {},
+  uploadStatus: {},
   failedSummaries: {},
   receivedRecords: [],
   loadingRecords: false,
@@ -149,6 +159,7 @@ export const useVault = create<VaultState>((set, get) => ({
         records: cachedRecords,
         summaries: cachedSummaries,
         originals: {},
+        uploadStatus: {},
         failedSummaries: {},
         receivedRecords: [],
       })
@@ -178,6 +189,7 @@ export const useVault = create<VaultState>((set, get) => ({
       records: [],
       summaries: {},
       originals: {},
+      uploadStatus: {},
       failedSummaries: {},
       receivedRecords: [],
     })
@@ -250,6 +262,41 @@ export const useVault = create<VaultState>((set, get) => ({
 
   getCachedOriginal: (id) => {
     return get().originals[id] ?? null
+  },
+
+  setUploadStatus: (id, status) => {
+    set({ uploadStatus: { ...get().uploadStatus, [id]: status } })
+  },
+
+  // Retry the background 0G storage of a record from its locally-cached
+  // original bytes + summary. Works within the session the upload happened in
+  // (the original cache is in-memory). Returns true on success.
+  backupRecord: async (meta) => {
+    const { storage, index, summaries } = get()
+    if (!storage) return false
+    const original = get().getCachedOriginal(meta.id)
+    const recKey = await get().getRecordKey(meta)
+    if (!original || !recKey) {
+      get().setUploadStatus(meta.id, 'failed')
+      return false
+    }
+    get().setUploadStatus(meta.id, 'pending')
+    try {
+      const uploads: Promise<unknown>[] = [storage.uploadEncrypted(original, recKey)]
+      const summary = summaries[meta.id]
+      if (summary) {
+        const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
+        uploads.push(storage.uploadEncrypted(summaryBytes, recKey))
+      }
+      await Promise.all(uploads)
+      if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
+      get().setUploadStatus(meta.id, 'stored')
+      return true
+    } catch (e) {
+      console.error('Background 0G backup failed:', e)
+      get().setUploadStatus(meta.id, 'failed')
+      return false
+    }
   },
 
   getRecordKey: async (meta) => {

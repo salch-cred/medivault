@@ -18,14 +18,13 @@ import { ZG } from '@/lib/og/config'
 import { ethers } from 'ethers'
 import { cn } from '@/lib/utils'
 
-type Stage = 'idle' | 'parsing' | 'analyzing' | 'encrypting' | 'indexing' | 'done'
+type Stage = 'idle' | 'parsing' | 'analyzing' | 'encrypting' | 'done'
 
 const STAGE_LABEL: Record<Stage, string> = {
   idle: '',
   parsing: 'Reading your document…',
   analyzing: 'AI is explaining it (0G Compute)…',
-  encrypting: 'Encrypting + uploading to 0G…',
-  indexing: 'Updating your decentralized index…',
+  encrypting: 'Encrypting your document…',
   done: 'Saved to your vault',
 }
 
@@ -39,19 +38,8 @@ const LABEL_TRANSITION = { duration: 0.2 }
 const PROGRESS_INITIAL = { opacity: 0 }
 const PROGRESS_ANIMATE = { opacity: 1 }
 
-// Map a raw 0G SDK progress message to a short, friendly line + a progress %.
-function friendlyProgress(msg: string): { label: string; pct?: number } {
-  const m = msg.toLowerCase()
-  if (m.includes('transaction submitted')) return { label: 'Transaction submitted on 0G…', pct: 72 }
-  if (m.includes('waiting for storage node to sync')) return { label: 'Waiting for storage node to sync…', pct: 80 }
-  if (m.includes('log entry confirmed') || m.includes('uploading segments')) return { label: 'Uploading encrypted segments…', pct: 86 }
-  if (m.includes('segments uploaded') || m.includes('finality')) return { label: 'Almost done — finalizing…', pct: 90 }
-  if (m.includes('finalized') || m.includes('already stored')) return { label: 'Stored on 0G ✓', pct: 92 }
-  return { label: msg }
-}
-
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [detail, setDetail] = useState('')
@@ -69,24 +57,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
       }
 
       // Pre-warm 0G node selection now (during the slow parse/AI step) so the
-      // actual upload's node selection is already cached + sorted by sync.
+      // actual background upload's node selection is already cached + sorted.
       void storage?.prewarm()
-
-      let tickInterval: ReturnType<typeof setInterval> | null = null
-      const startTick = (from: number, to: number, durationMs = 45000) => {
-        if (tickInterval) clearInterval(tickInterval)
-        const step = (to - from) / (durationMs / 500)
-        let current = from
-        tickInterval = setInterval(() => {
-          current = Math.min(to, current + step)
-          setPct(Math.round(current))
-        }, 500)
-      }
-      const stopTick = (finalPct: number) => {
-        if (tickInterval) clearInterval(tickInterval)
-        tickInterval = null
-        setPct(finalPct)
-      }
 
       try {
         setStage('parsing')
@@ -97,7 +69,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         if (!text.trim()) throw new Error('Could not read any text from this document.')
 
         setStage('analyzing')
-        setPct(50)
+        setPct(55)
         const res = await fetch('/api/ai/extract', {
           method: 'POST',
           headers: {
@@ -114,7 +86,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         const summary = normalizeExtraction(result)
 
         setStage('encrypting')
-        setPct(65)
+        setPct(75)
 
         const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
         const balance = await provider.getBalance(autoWalletAddress!)
@@ -125,69 +97,79 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
 
-        startTick(65, 70, 8000)
-        // Live progress from the SDK (replaces the blank-spinner wait). The file
-        // upload drives the detail line; the tiny summary upload runs alongside.
-        const onProgress = (m: string) => {
-          const { label, pct: p } = friendlyProgress(m)
-          setDetail(label)
-          if (typeof p === 'number') {
-            stopTick(p)
-          }
-        }
+        // ⚡ INSTANT path: compute both Merkle roots LOCALLY (no network) so we
+        // can persist + show the record immediately, then finalize the actual
+        // 0G storage in the background.
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
-        const [{ rootHash, txHash }, { rootHash: summaryRootHash }] = await Promise.all([
-          storage!.uploadEncrypted(file, recKey, onProgress),
-          storage!.uploadEncrypted(summaryBytes, recKey),
+        const [filePrep, summaryPrep] = await Promise.all([
+          storage!.prepareUpload(file, recKey),
+          storage!.prepareUpload(summaryBytes, recKey),
         ])
-        stopTick(92)
-        setDetail('')
+        setPct(95)
 
-        setStage('indexing')
-        startTick(92, 98, 8000)
         const meta: RecordMeta = {
           id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `rec_${Date.now()}`,
           owner: address!,
           title: summary.title,
           docType: summary.docType,
           date: summary.date,
-          rootHash,
-          summaryRootHash,
+          rootHash: filePrep.rootHash,
+          summaryRootHash: summaryPrep.rootHash,
           recordKeySalt: saltToHex(salt),
           createdAt: new Date().toISOString(),
         }
-        void index!.put(meta).catch(e => console.warn('KV index write failed:', e))
+
+        // Persist locally so the record opens instantly (summary + original from
+        // cache, zero network).
         addRecord(meta, summary)
-        // Cache the ORIGINAL bytes locally so opening this record renders the
-        // original instantly — no 0G download / indexer-propagation wait.
         try {
           const originalBytes = new Uint8Array(await file.arrayBuffer())
           cacheOriginal(meta.id, originalBytes)
         } catch (cacheErr) {
           console.warn('Failed to cache original locally:', cacheErr)
         }
-        stopTick(100)
+        setUploadStatus(meta.id, 'pending')
 
+        // Surface the record NOW.
         setStage('done')
         setPct(100)
-        toast.success('Encrypted and saved to 0G! 🎉', {
-          description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
+        toast.success('Saved to your vault! 🎉', {
+          description: 'Backing up to 0G storage in the background…',
         })
         onUploaded?.(meta.id)
         setTimeout(() => {
           setStage('idle')
           setPct(0)
           setDetail('')
-        }, 1600)
+        }, 1400)
+
+        // 🔄 Background finalize: the real (slow) on-chain 0G storage. The UI is
+        // already done; the user is on the record page reading from cache.
+        void (async () => {
+          try {
+            const [{ txHash }] = await Promise.all([
+              filePrep.finalize(),
+              summaryPrep.finalize(),
+            ])
+            await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
+            setUploadStatus(meta.id, 'stored')
+            toast.success('Backed up to 0G ✓', {
+              description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
+            })
+          } catch (bgErr) {
+            console.error('Background 0G backup failed:', bgErr)
+            setUploadStatus(meta.id, 'failed')
+            toast.error('0G backup failed — open the record to retry.')
+          }
+        })()
       } catch (e) {
-        if (tickInterval) clearInterval(tickInterval)
         setStage('idle')
         setPct(0)
         setDetail('')
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, setUploadStatus, onUploaded],
   )
 
   return (

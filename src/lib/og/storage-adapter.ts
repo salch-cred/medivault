@@ -33,7 +33,7 @@ const SYNC_TIMEOUT_MS = 70_000
 // How many times we re-select a fresher node after a sync stall.
 const MAX_SYNC_TIMEOUTS = 2
 
-// ── Read-path propagation retry ───────────────────────────────────────────
+// ── Read-path propagation retry ─────────────────────────────────────
 // Right after a successful upload the file is on-chain and on the storage node,
 // but the indexer's getFileLocations can briefly return empty / "file not
 // found" until the node finishes syncing the submission block and the indexer
@@ -147,10 +147,10 @@ export class OgStorageAdapter implements StorageAdapter {
         if (attempt < maxAttempts - 1) {
           if (recent) {
             onProgress?.(
-              `Your file is still syncing across 0G storage nodes\u2026 retrying (${attempt + 1}/${maxAttempts - 1})`,
+              `Your file is still syncing across 0G storage nodes… retrying (${attempt + 1}/${maxAttempts - 1})`,
             )
           } else {
-            onProgress?.('Looking for the file on 0G\u2026')
+            onProgress?.('Looking for the file on 0G…')
           }
           console.warn(
             `0G read: "${rootHash}" not yet locatable (attempt ${attempt + 1}/${maxAttempts}); ${recent ? 'recently uploaded -- waiting for propagation' : 'not a recent upload -- failing fast'}.`,
@@ -344,7 +344,7 @@ export class OgStorageAdapter implements StorageAdapter {
             `0G upload stalled waiting for storage node sync; re-selecting a fresher node (sync retry ${syncTimeouts}/${MAX_SYNC_TIMEOUTS}).`,
           )
           onProgress?.(
-            'Storage nodes are lagging \u2014 switching to a fresher node and retrying\u2026',
+            'Storage nodes are lagging — switching to a fresher node and retrying…',
           )
           // The abandoned attempt already submitted; clean up any nonce gap and
           // retry without escalating gas (this isn't a fee problem).
@@ -410,12 +410,23 @@ export class OgStorageAdapter implements StorageAdapter {
     throw new Error(String(lastErr))
   }
 
-  /** AES-256 encrypted upload of a File (browser) or in-memory bytes. */
-  async uploadEncrypted(
+  /**
+   * Phase 1 of an upload: build the blob and compute its Merkle rootHash
+   * LOCALLY (no network). This lets the caller persist + display the record
+   * INSTANTLY, then finalize the actual (slow, on-chain) 0G storage in the
+   * background via the returned finalize() closure.
+   *
+   * finalize() runs the same gas-aware, sync-bounded upload as a normal
+   * uploadEncrypted and marks the root as recently-uploaded so the read path
+   * waits patiently for propagation.
+   */
+  async prepareUpload(
     data: Uint8Array | File,
     key: Uint8Array,
-    onProgress?: ProgressFn,
-  ): Promise<{ rootHash: string; txHash?: string }> {
+  ): Promise<{
+    rootHash: string
+    finalize: (onProgress?: ProgressFn) => Promise<{ txHash?: string }>
+  }> {
     const blob: unknown =
       typeof File !== 'undefined' && data instanceof File
         ? new ZgBlob(data)
@@ -427,18 +438,34 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    const tx = await this.uploadWithRetry(blob, {
-      encryption: { type: 'aes256', key },
-      finalityRequired: false,
-      onProgress,
-    })
+    const finalize = async (
+      onProgress?: ProgressFn,
+    ): Promise<{ txHash?: string }> => {
+      const tx = await this.uploadWithRetry(blob, {
+        encryption: { type: 'aes256', key },
+        finalityRequired: false,
+        onProgress,
+      })
+      // Remember this root so the read path waits patiently for propagation.
+      markRecentUpload(rootHash)
+      const txHash =
+        typeof tx === 'string'
+          ? tx
+          : (tx as { txHash?: string } | undefined)?.txHash
+      return { txHash }
+    }
 
-    // Remember this root so the read path waits patiently for it to propagate
-    // to the indexer instead of erroring with "file not found" right away.
-    markRecentUpload(rootHash)
+    return { rootHash, finalize }
+  }
 
-    const txHash =
-      typeof tx === 'string' ? tx : (tx as { txHash?: string } | undefined)?.txHash
+  /** AES-256 encrypted upload of a File (browser) or in-memory bytes. */
+  async uploadEncrypted(
+    data: Uint8Array | File,
+    key: Uint8Array,
+    onProgress?: ProgressFn,
+  ): Promise<{ rootHash: string; txHash?: string }> {
+    const { rootHash, finalize } = await this.prepareUpload(data, key)
+    const { txHash } = await finalize(onProgress)
     return { rootHash, txHash }
   }
 

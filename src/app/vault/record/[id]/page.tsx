@@ -14,6 +14,8 @@ import {
   Quote,
   Printer,
   RefreshCw,
+  CloudUpload,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConnectGate } from '@/components/connect-gate'
@@ -39,7 +41,7 @@ const FAST_TRANSITION = { duration: 0.2 }
 const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
 
 function RecordView({ meta }: { meta: RecordMeta }) {
-  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal } = useVault()
+  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal, uploadStatus, backupRecord } = useVault()
   const [summary, setSummary] = useState<ExtractionResult | undefined>(summaries[meta.id])
   const [loadingSummary, setLoadingSummary] = useState(!summaries[meta.id])
   const [summaryFailed, setSummaryFailed] = useState(false)
@@ -49,6 +51,9 @@ function RecordView({ meta }: { meta: RecordMeta }) {
   const [docText, setDocText] = useState<string | null>(null)
   const [docStatus, setDocStatus] = useState<string | null>(null)
   const [loadingDoc, setLoadingDoc] = useState(false)
+  const [backingUp, setBackingUp] = useState(false)
+
+  const backupState = uploadStatus[meta.id]
 
   async function fetchSummary() {
     setSummaryFailed(false)
@@ -89,6 +94,16 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta.id])
+
+  async function retryBackup() {
+    setBackingUp(true)
+    try {
+      const ok = await backupRecord(meta)
+      toast[ok ? 'success' : 'error'](ok ? 'Backed up to 0G ✓' : 'Backup failed — please try again.')
+    } finally {
+      setBackingUp(false)
+    }
+  }
 
   async function verify() {
     if (!storage) return
@@ -176,6 +191,23 @@ function RecordView({ meta }: { meta: RecordMeta }) {
             <ShareDialog meta={meta} summary={summary} />
           </div>
         </motion.div>
+
+        {backupState === 'pending' ? (
+          <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+            <CloudUpload className="h-3.5 w-3.5 animate-pulse" /> Backing up to 0G decentralized storage in the background… You can keep using your vault.
+          </div>
+        ) : backupState === 'stored' ? (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Backed up to 0G decentralized storage.
+          </div>
+        ) : backupState === 'failed' ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            <AlertTriangle className="h-3.5 w-3.5" /> The 0G backup didn’t finish.
+            <Button onClick={retryBackup} disabled={backingUp} variant="outline" size="sm" className="h-6 px-2 text-xs">
+              {backingUp ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Retry backup
+            </Button>
+          </div>
+        ) : null}
 
         {verifying && verifyStatus ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -460,9 +492,4 @@ export default function RecordDetailPage({ params }: { params: { id: string } })
           </p>
           <Button asChild variant="outline" className="mt-4">
             <Link href="/vault">Back to vault</Link>
-          </Button>
-        </div>
-      )}
-    </ConnectGate>
-  )
-}
+          </Button
