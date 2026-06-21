@@ -1,3 +1,5 @@
+'use client'
+
 /**
  * Utility functions for PIN-based AES-GCM encryption using Web Crypto API.
  */

@@ -1,3 +1,5 @@
+'use client'
+
 /**
  * 60fps-tuned motion presets (framer-motion).
  *
