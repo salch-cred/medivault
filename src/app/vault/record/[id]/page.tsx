@@ -208,7 +208,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     if (!bytes) return
     setFileSize(bytes.byteLength)
     try {
-      const blob = new Blob([bytes])
+      const blob = new Blob([bytes as BlobPart])
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
