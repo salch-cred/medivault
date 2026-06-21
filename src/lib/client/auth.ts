@@ -4,13 +4,16 @@ import type { ethers } from 'ethers'
 
 /**
  * Browser helper that builds the `x-medivault-auth` header expected by the
- * server auth (src/lib/server/auth.ts). Signs `address|timestamp` with the
- * requested signer. The result is cached in sessionStorage for ~4 minutes so
- * protected API calls don't repeatedly prompt the user during one session.
+ * server auth (src/lib/server/auth.ts).
+ *
+ * Signs `address|timestamp|nonce` with the requested signer. The result is
+ * cached in sessionStorage for ~70 seconds — safely under the server's 90s
+ * skew window — so protected API calls don't repeatedly prompt the user during
+ * one session while never sending an expired header.
  */
 
 const AUTH_CACHE_PREFIX = 'medivault_auth_v1'
-const AUTH_CACHE_TTL_MS = 4 * 60 * 1000
+const AUTH_CACHE_TTL_MS = 70 * 1000 // 70s — under the server's 90s MAX_SKEW_MS
 
 type CachedAuth = { header: string; ts: number }
 
@@ -40,6 +43,13 @@ function writeCached(address: string, header: string, ts: number): void {
   } catch {}
 }
 
+/** Generate a random nonce string (16 hex chars = 8 bytes of entropy). */
+function generateNonce(): string {
+  const arr = new Uint8Array(8)
+  crypto.getRandomValues(arr)
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export async function buildAuthHeader(
   signer: ethers.Signer | null,
   address: string | null,
@@ -49,11 +59,12 @@ export async function buildAuthHeader(
   if (cached) return cached
 
   const ts = Date.now()
-  // Use | as delimiter to match server-side verifyAuth (see server/auth.ts).
-  const message = `${address}|${ts}`
+  const nonce = generateNonce()
+  // Sign address|timestamp|nonce to match server-side verifyAuth 4-part format.
+  const message = `${address}|${ts}|${nonce}`
   try {
     const signature = await signer.signMessage(message)
-    const header = `${address}|${ts}|${signature}`
+    const header = `${address}|${ts}|${nonce}|${signature}`
     writeCached(address, header, ts)
     return header
   } catch {
