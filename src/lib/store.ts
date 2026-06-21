@@ -49,6 +49,13 @@ type VaultState = {
   index: KvIndexAdapter | null
   records: RecordMeta[]
   summaries: Record<string, ExtractionResult>
+  // In-memory cache of decrypted ORIGINAL document bytes, keyed by record id.
+  // Populated at upload time so opening a freshly uploaded record renders the
+  // original INSTANTLY with zero network round-trips (no waiting on the 0G
+  // indexer to propagate the file). Not persisted to disk to avoid
+  // localStorage quota issues with large files; on a full reload we fall back
+  // to a 0G download (which uses the propagation-aware read-retry).
+  originals: Record<string, Uint8Array>
   // Ids whose summary failed to load this session (e.g. ciphertext never
   // successfully stored on 0G during the earlier broken era). We short-circuit
   // these so the vault page doesn't re-download+retry them on every render and
@@ -66,6 +73,8 @@ type VaultState = {
   refresh: () => Promise<void>
   loadSummary: (meta: RecordMeta) => Promise<ExtractionResult | null>
   addRecord: (meta: RecordMeta, summary: ExtractionResult) => void
+  cacheOriginal: (id: string, bytes: Uint8Array) => void
+  getCachedOriginal: (id: string) => Uint8Array | null
   getRecordKey: (meta: RecordMeta) => Promise<Uint8Array | null>
   setLanguage: (lang: string) => void
   setEli5: (v: boolean) => void
@@ -85,6 +94,7 @@ export const useVault = create<VaultState>((set, get) => ({
   index: null,
   records: [],
   summaries: {},
+  originals: {},
   failedSummaries: {},
   receivedRecords: [],
   loadingRecords: false,
@@ -138,6 +148,7 @@ export const useVault = create<VaultState>((set, get) => ({
         index,
         records: cachedRecords,
         summaries: cachedSummaries,
+        originals: {},
         failedSummaries: {},
         receivedRecords: [],
       })
@@ -166,6 +177,7 @@ export const useVault = create<VaultState>((set, get) => ({
       index: null,
       records: [],
       summaries: {},
+      originals: {},
       failedSummaries: {},
       receivedRecords: [],
     })
@@ -230,6 +242,14 @@ export const useVault = create<VaultState>((set, get) => ({
       void saveCachedRecords(address, key, newRecords)
       void saveCachedSummaries(address, key, newSummaries)
     }
+  },
+
+  cacheOriginal: (id, bytes) => {
+    set({ originals: { ...get().originals, [id]: bytes } })
+  },
+
+  getCachedOriginal: (id) => {
+    return get().originals[id] ?? null
   },
 
   getRecordKey: async (meta) => {
