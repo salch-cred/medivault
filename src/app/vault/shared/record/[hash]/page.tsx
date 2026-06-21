@@ -44,6 +44,7 @@ import { DOC_TYPE_LABELS, type ExtractionResult } from '@/lib/og/types'
 import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash, fileKind, downloadFileName } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
 import { eciesDecrypt, type EciesEnvelope } from '@/lib/og/ecies'
+import { buildAuthHeader } from '@/lib/client/auth'
 
 const FADE_UP_INITIAL = { opacity: 0, y: 12 }
 const FADE_ANIMATE = { opacity: 1, y: 0 }
@@ -70,7 +71,7 @@ export default function SharedRecordPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { storage, autoWalletSigner, importReceivedRecord } = useVault()
+  const { storage, autoWalletSigner, importReceivedRecord, signer, address: walletAddress } = useVault()
 
   const hash = params.hash as string
   const senderNameParam = searchParams.get('senderName') || 'Unknown Patient'
@@ -148,6 +149,9 @@ export default function SharedRecordPage() {
           throw new Error('Auto-Wallet private key not loaded')
         }
 
+        // Build auth header for the share-envelope API (now requires auth).
+        const auth = await buildAuthHeader(signer, walletAddress)
+
         // ── Fast path ───────────────────────────────────────────
         // The sender also stashes a self-contained, client-side-encrypted copy
         // of this exact payload in the instant KV layer (keyed by the 0G root
@@ -157,7 +161,10 @@ export default function SharedRecordPage() {
         // plaintext. If it is missing (older shares) we fall back to 0G below.
         if (active) setStatus('Fetching your secure record…')
         try {
-          const r = await fetch(`/api/og/share-envelope?hash=${encodeURIComponent(hash)}`)
+          const r = await fetch(
+            `/api/og/share-envelope?hash=${encodeURIComponent(hash)}`,
+            { headers: auth ? { 'x-medivault-auth': auth } : undefined },
+          )
           if (r.ok) {
             const data = (await r.json()) as { envelope?: EciesEnvelope }
             if (data?.envelope) {
@@ -212,7 +219,7 @@ export default function SharedRecordPage() {
     return () => {
       active = false
     }
-  }, [hash, storage, autoWalletSigner])
+  }, [hash, storage, autoWalletSigner, signer, walletAddress])
 
   // ── Auto-ready + save-forever ────────────────────────────────────
   // As soon as the record is decrypted, automatically download + decrypt the
@@ -797,7 +804,7 @@ export default function SharedRecordPage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-black mb-2 text-base">Active Medications</h4>
-                  <ul className="list-inside list-disc text-base text-black marker:text-black space-y-1">
+                  <ul className="list-inside list-disc text-base text-black marker:text:black space-y-1">
                     {summary.medications?.length ? summary.medications.map((m, i) => (
                       <li key={i}>{m.name} {m.dose && `- ${m.dose}`}</li>
                     )) : <li>None Recorded</li>}
