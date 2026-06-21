@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server'
-export const dynamic = 'force-dynamic'
+import { ethers } from 'ethers'
+import { requireAuthAddress } from '@/lib/server/auth'
 
-// Durable, cross-device record-index pointer store.
-//
-// MediVault has no public 0G-KV node on mainnet, so the per-user record index
-// (the encrypted list of RecordMeta) is uploaded to 0G STORAGE and only a tiny
-// pointer ({ rootHash }) is kept here, in the same persistent key-value service
-// the sharing feature already uses. The pointer is small (~120 bytes) so it
-// always fits well within the KV value/URL limits. The actual index bytes live
-// on 0G (encrypted with the wallet-derived vault key), giving lifelong,
-// device-independent persistence with zero central PHI database.
+export const dynamic = 'force-dynamic'
 
 const KV_BASE = 'https://keyvalue.immanuel.co/api/KeyVal'
 const KV_NS = 'p0vd5ml2'
+const ROOT_RE = /^0x[0-9a-fA-F]{64}$/
 
 function indexKey(address: string): string {
   return `mvidx_${address.toLowerCase()}`
@@ -43,10 +37,14 @@ async function savePointer(address: string, pointer: Record<string, unknown>): P
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const address = searchParams.get('address')?.toLowerCase()
-    if (!address) {
-      return NextResponse.json({ error: 'Missing address parameter' }, { status: 400 })
+    const addressRaw = searchParams.get('address')
+    if (!addressRaw || !ethers.isAddress(addressRaw)) {
+      return NextResponse.json({ error: 'Missing or invalid address parameter' }, { status: 400 })
     }
+    const address = ethers.getAddress(addressRaw).toLowerCase()
+    const auth = requireAuthAddress(req, address)
+    if (!auth.ok) return auth.response
+
     const pointer = await getPointer(address)
     return NextResponse.json(pointer || {})
   } catch (error: any) {
@@ -58,12 +56,19 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
     const { address, rootHash, updatedAt } = body
-    if (!address || !rootHash) {
-      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
+    if (!address || !rootHash || !ethers.isAddress(address)) {
+      return NextResponse.json({ error: 'Missing or invalid required parameters' }, { status: 400 })
     }
-    await savePointer(address, {
-      rootHash,
-      updatedAt: updatedAt || new Date().toISOString(),
+    if (!ROOT_RE.test(rootHash)) {
+      return NextResponse.json({ error: 'Invalid root hash' }, { status: 400 })
+    }
+    const normalized = ethers.getAddress(address).toLowerCase()
+    const auth = requireAuthAddress(req, normalized)
+    if (!auth.ok) return auth.response
+
+    await savePointer(normalized, {
+      rootHash: rootHash.toLowerCase(),
+      updatedAt: typeof updatedAt === 'string' ? updatedAt : new Date().toISOString(),
     })
     return NextResponse.json({ success: true })
   } catch (error: any) {

@@ -1,111 +1,59 @@
 import { NextResponse } from 'next/server'
+import { ethers } from 'ethers'
+import { requireAuthAddress, verifyAuth } from '@/lib/server/auth'
+
 export const dynamic = 'force-dynamic'
-import fs from 'fs'
-import path from 'path'
 
-// Determine writable directory based on environment (Vercel has a writable /tmp)
-const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
-const WritableDir = isVercel ? '/tmp' : path.join(process.cwd(), 'scratch')
-const REGISTRY_FILE = path.join(WritableDir, 'shared_records.json')
+const KV_BASE = 'https://keyvalue.immanuel.co/api/KeyVal'
+const KV_NS = 'p0vd5ml2'
+const ROOT_RE = /^0x[0-9a-fA-F]{64}$/
+const MAX_TITLE = 160
+const MAX_NAME = 80
+const MAX_DOCTYPE = 64
 
-// Global in-memory cache to ensure registry data is preserved across container runs
-const globalForShares = global as unknown as {
-  sharesMemory: any[]
-}
-if (!globalForShares.sharesMemory) {
-  globalForShares.sharesMemory = []
+function sharesKey(address: string): string {
+  return `shares_${address.toLowerCase()}`
 }
 
-// Helper to read the local file registry (legacy local fallback)
-function readLocalRegistry(): any[] {
-  try {
-    let fileShares: any[] = []
-    if (fs.existsSync(REGISTRY_FILE)) {
-      const data = fs.readFileSync(REGISTRY_FILE, 'utf8')
-      fileShares = JSON.parse(data)
-    }
-    const merged = [...fileShares]
-    for (const memShare of globalForShares.sharesMemory) {
-      if (!merged.some(x => x.id === memShare.id)) {
-        merged.push(memShare)
-      }
-    }
-    globalForShares.sharesMemory = merged
-    return globalForShares.sharesMemory
-  } catch (e) {
-    console.error('Error reading local shared records registry:', e)
-    return globalForShares.sharesMemory || []
-  }
+function cleanString(v: unknown, max: number): string {
+  return typeof v === 'string' ? v.slice(0, max) : ''
 }
 
-// Helper to write to local file registry (legacy local fallback)
-function writeLocalRegistry(data: any[]) {
-  try {
-    globalForShares.sharesMemory = data
-    fs.mkdirSync(path.dirname(REGISTRY_FILE), { recursive: true })
-    fs.writeFileSync(REGISTRY_FILE, JSON.stringify(data, null, 2))
-  } catch (e) {
-    console.error('Error writing local shared records registry:', e)
-  }
-}
-
-// Fetch shared records from persistent database
 async function getPersistentShares(address: string): Promise<any[]> {
   try {
-    const key = `shares_${address.toLowerCase()}`
-    const res = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/p0vd5ml2/${key}`)
-    if (res.ok) {
-      const raw = await res.text()
-      const cleaned = raw.replace(/"/g, '').trim()
-      if (cleaned) {
-        const decoded = Buffer.from(cleaned, 'hex').toString('utf8')
-        if (decoded) {
-          const parsed = JSON.parse(decoded)
-          if (Array.isArray(parsed)) return parsed
-        }
-      }
-    }
+    const res = await fetch(`${KV_BASE}/GetValue/${KV_NS}/${sharesKey(address)}`)
+    if (!res.ok) return []
+    const raw = await res.text()
+    const cleaned = raw.replace(/"/g, '').trim()
+    if (!cleaned) return []
+    const decoded = Buffer.from(cleaned, 'hex').toString('utf8')
+    if (!decoded) return []
+    const parsed = JSON.parse(decoded)
+    return Array.isArray(parsed) ? parsed : []
   } catch (err) {
     console.warn('Failed to retrieve persistent shares:', err)
+    return []
   }
-  return []
 }
 
-// Save shared records to persistent database
 async function savePersistentShares(address: string, shares: any[]): Promise<void> {
-  try {
-    const key = `shares_${address.toLowerCase()}`
-    const hex = Buffer.from(JSON.stringify(shares)).toString('hex')
-    await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/p0vd5ml2/${key}/${hex}`, { method: 'POST' })
-  } catch (err) {
-    console.warn('Failed to save persistent shares:', err)
-  }
+  const hex = Buffer.from(JSON.stringify(shares)).toString('hex')
+  await fetch(`${KV_BASE}/UpdateValue/${KV_NS}/${sharesKey(address)}/${hex}`, { method: 'POST' })
 }
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const address = searchParams.get('address')?.toLowerCase()
-
-    if (!address) {
-      return NextResponse.json({ error: 'Missing address parameter' }, { status: 400 })
+    const addressRaw = searchParams.get('address')
+    if (!addressRaw || !ethers.isAddress(addressRaw)) {
+      return NextResponse.json({ error: 'Missing or invalid address parameter' }, { status: 400 })
     }
+    const address = ethers.getAddress(addressRaw).toLowerCase()
 
-    // Try persistent database first
-    let sharedRecords = await getPersistentShares(address)
+    const auth = requireAuthAddress(req, address)
+    if (!auth.ok) return auth.response
 
-    // Fallback to local memory/file registry if persistent DB is empty/fails
-    if (sharedRecords.length === 0) {
-      const localRegistry = readLocalRegistry()
-      sharedRecords = localRegistry.filter(
-        (r: any) => r.recipientAddress?.toLowerCase() === address
-      )
-      // Sync back to persistent DB if local records found
-      if (sharedRecords.length > 0) {
-        await savePersistentShares(address, sharedRecords)
-      }
-    }
-
+    const sharedRecords = await getPersistentShares(address)
     return NextResponse.json(sharedRecords)
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -114,6 +62,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const auth = verifyAuth(req)
+    if (!auth.ok) return auth.response
+
     const body = await req.json()
     const {
       recipientAddress,
@@ -129,29 +80,32 @@ export async function POST(req: Request) {
     if (!recipientAddress || !senderAddress || !rootHash || !title) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
     }
+    if (!ethers.isAddress(recipientAddress) || !ethers.isAddress(senderAddress)) {
+      return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 })
+    }
+    if (auth.address.toLowerCase() !== senderAddress.toLowerCase()) {
+      return NextResponse.json({ error: 'Authenticated wallet does not match senderAddress' }, { status: 403 })
+    }
+    if (!ROOT_RE.test(rootHash)) {
+      return NextResponse.json({ error: 'Invalid root hash' }, { status: 400 })
+    }
 
-    const recipientAddrLower = recipientAddress.toLowerCase()
+    const recipientAddrLower = ethers.getAddress(recipientAddress).toLowerCase()
     const newEntry = {
       id: `${recipientAddrLower}_${Date.now()}`,
       recipientAddress: recipientAddrLower,
-      senderName,
-      senderAddress: senderAddress.toLowerCase(),
-      title,
-      docType,
-      date,
-      sharedAt,
-      rootHash,
+      senderName: cleanString(senderName, MAX_NAME),
+      senderAddress: ethers.getAddress(senderAddress).toLowerCase(),
+      title: cleanString(title, MAX_TITLE),
+      docType: cleanString(docType, MAX_DOCTYPE),
+      date: typeof date === 'string' || date === null ? date : null,
+      sharedAt: typeof sharedAt === 'string' ? sharedAt : new Date().toISOString(),
+      rootHash: rootHash.toLowerCase(),
     }
 
-    // Write to persistent DB
     const existingShares = await getPersistentShares(recipientAddrLower)
-    const updatedShares = [...existingShares.filter(s => s.rootHash !== rootHash), newEntry]
+    const updatedShares = [...existingShares.filter((s) => s.rootHash !== newEntry.rootHash), newEntry]
     await savePersistentShares(recipientAddrLower, updatedShares)
-
-    // Legacy local fallback write
-    const localRegistry = readLocalRegistry()
-    localRegistry.push(newEntry)
-    writeLocalRegistry(localRegistry)
 
     return NextResponse.json({ success: true, record: newEntry })
   } catch (error: any) {

@@ -2,18 +2,12 @@ import { ethers } from 'ethers'
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
- * Server-side auth for the AI/parse API routes.
+ * Server-side auth for protected API routes.
  *
- * The browser signs a short, time-bound challenge with the connected wallet.
- * The signature is sent in the `x-medivault-auth` header as:
+ * The browser signs a short, time-bound challenge with the wallet that owns the
+ * protected resource. The signature is sent in `x-medivault-auth` as:
  *   `${address}|${timestamp}|${signature}`
  * where `signature = personal_sign("${address}|${timestamp}")`.
- *
- * We use `|` as the delimiter instead of `.` because signatures are hex
- * and will never contain `|`, but future wallet formats could theoretically
- * include `.` in their output. This is intentionally lightweight (no SIWE
- * library) and proves the caller controls a wallet — enough to stop drive-by
- * abuse of the LLM proxy while keeping the dependency surface small.
  */
 
 const MAX_SKEW_MS = 5 * 60 * 1000 // 5 minutes
@@ -26,10 +20,6 @@ const MAX_QUESTION = 4_000 // chat question length
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
 
-/**
- * Check if an address has exceeded its rate limit for a given action.
- * Returns true if the request is allowed, false if rate-limited.
- */
 export function checkRateLimit(
   address: string,
   action: string,
@@ -42,9 +32,7 @@ export function checkRateLimit(
     rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
     return true
   }
-  if (entry.count >= maxPerMinute) {
-    return false
-  }
+  if (entry.count >= maxPerMinute) return false
   entry.count++
   return true
 }
@@ -57,42 +45,42 @@ function error(status: number, message: string): NextResponse {
   return NextResponse.json({ error: message }, { status })
 }
 
-/** Verify a `address|timestamp|signature` auth header. */
-export function verifyAuth(req: NextRequest): AuthResult {
+/** Verify an `address|timestamp|signature` auth header. */
+export function verifyAuth(req: NextRequest | Request): AuthResult {
   const header = req.headers.get('x-medivault-auth')
-  if (!header) {
-    return { ok: false, response: error(401, 'Authentication required.') }
-  }
-  // Use | as delimiter — signatures are hex (0x + 130 hex chars) and will
-  // never contain |, making this safer than . which could theoretically
-  // appear in future wallet signature formats.
+  if (!header) return { ok: false, response: error(401, 'Authentication required.') }
+
   const parts = header.split('|')
-  if (parts.length !== 3) {
-    return { ok: false, response: error(401, 'Malformed auth header.') }
-  }
+  if (parts.length !== 3) return { ok: false, response: error(401, 'Malformed auth header.') }
   const [address, tsStr, signature] = parts
 
-  // Validate address — ethers.isAddress throws on garbage.
-  if (!ethers.isAddress(address)) {
-    return { ok: false, response: error(401, 'Invalid wallet address.') }
-  }
+  if (!ethers.isAddress(address)) return { ok: false, response: error(401, 'Invalid wallet address.') }
 
   const ts = Number(tsStr)
-  if (!Number.isFinite(ts) || ts <= 0) {
-    return { ok: false, response: error(401, 'Invalid timestamp.') }
-  }
-  const skew = Math.abs(Date.now() - ts)
-  if (skew > MAX_SKEW_MS) {
+  if (!Number.isFinite(ts) || ts <= 0) return { ok: false, response: error(401, 'Invalid timestamp.') }
+  if (Math.abs(Date.now() - ts) > MAX_SKEW_MS) {
     return { ok: false, response: error(401, 'Auth timestamp out of range.') }
   }
 
-  // Recover the signer from the personal-signature of "address|timestamp".
-  // personal_sign prefixes the message; ethers.verifyMessage replicates that.
-  const expected = ethers.verifyMessage(`${address}|${ts}`, signature)
-  if (expected.toLowerCase() !== address.toLowerCase()) {
+  try {
+    const expected = ethers.verifyMessage(`${address}|${ts}`, signature)
+    if (expected.toLowerCase() !== address.toLowerCase()) {
+      return { ok: false, response: error(401, 'Signature verification failed.') }
+    }
+  } catch {
     return { ok: false, response: error(401, 'Signature verification failed.') }
   }
-  return { ok: true, address }
+
+  return { ok: true, address: ethers.getAddress(address) }
+}
+
+export function requireAuthAddress(req: NextRequest | Request, address: string): AuthResult {
+  const auth = verifyAuth(req)
+  if (!auth.ok) return auth
+  if (auth.address.toLowerCase() !== address.toLowerCase()) {
+    return { ok: false, response: error(403, 'Authenticated wallet does not match requested address.') }
+  }
+  return auth
 }
 
 /** Bound a string to a max length (truncates overlong input). */
