@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
 
-export async function POST(req: Request, { params }: { params: { path: string[] } }) {
-  return handleProxy(req, params.path)
+const OG_TESTNET_INDEXER = 'https://indexer-storage-testnet-turbo.0g.ai'
+
+export async function POST(req: Request, { params }: { params: { path?: string[] } }) {
+  return handleProxy(req, params.path ?? [])
 }
 
-export async function GET(req: Request, { params }: { params: { path: string[] } }) {
-  return handleProxy(req, params.path)
+export async function GET(req: Request, { params }: { params: { path?: string[] } }) {
+  return handleProxy(req, params.path ?? [])
 }
 
 export async function OPTIONS(req: Request) {
-  // Handle CORS preflight explicitly just in case
   return new NextResponse(null, {
     status: 200,
     headers: {
@@ -24,25 +25,38 @@ async function handleProxy(req: Request, pathArray: string[] = []) {
   try {
     const path = pathArray.join('/')
     const { search } = new URL(req.url)
-    const targetUrl = `https://indexer-storage-turbo.0g.ai/${path}${search}`
-    
-    // We only read body for POST requests
+    const targetUrl = `${OG_TESTNET_INDEXER}/${path}${search}`
+
+    const headers = new Headers()
+    req.headers.forEach((value, key) => {
+      if (!['host', 'origin', 'referer', 'connection'].includes(key.toLowerCase())) {
+        headers.set(key, value)
+      }
+    })
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/octet-stream')
+    }
+
     const body = req.method === 'POST' ? await req.arrayBuffer() : undefined
-    
+
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers: {
-        'Content-Type': req.headers.get('Content-Type') || 'application/octet-stream',
-      },
+      headers,
       body,
     })
-    
+
     const responseBuffer = await response.arrayBuffer()
+    const responseHeaders = new Headers()
+    response.headers.forEach((value, key) => {
+      if (!['access-control-allow-origin', 'content-encoding'].includes(key.toLowerCase())) {
+        responseHeaders.set(key, value)
+      }
+    })
+    responseHeaders.set('Access-Control-Allow-Origin', '*')
+
     return new NextResponse(responseBuffer, {
       status: response.status,
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
-      },
+      headers: responseHeaders,
     })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })

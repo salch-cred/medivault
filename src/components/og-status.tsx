@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Database, Cpu, HardDrive, Link2, Droplets, Copy, Wallet, RefreshCw, Zap } from 'lucide-react'
+import { Database, Cpu, HardDrive, Link2, Copy, Wallet, RefreshCw, Zap } from 'lucide-react'
 import { ethers } from 'ethers'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,13 +12,13 @@ import Link from 'next/link'
 
 const ITEMS = [
   { icon: Link2, label: 'Chain', value: `${ZG.CHAIN_NAME} · ${ZG.CHAIN_ID}` },
-  { icon: HardDrive, label: 'Storage indexer', value: 'mainnet' },
-  { icon: Database, label: 'KV index', value: 'decentralized · no central DB' },
+  { icon: HardDrive, label: 'Storage indexer', value: 'Galileo testnet' },
+  { icon: Database, label: 'KV index', value: '0G-KV testnet' },
   { icon: Cpu, label: 'AI compute', value: '0G Compute router' },
 ]
 
 export function OgStatus() {
-  const { address, autoWalletAddress } = useVault()
+  const { autoWalletAddress } = useVault()
   const [balance, setBalance] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -42,14 +42,6 @@ export function OgStatus() {
     return () => clearInterval(interval)
   }, [autoWalletAddress])
 
-  const handleFaucet = () => {
-    if (autoWalletAddress) {
-      navigator.clipboard.writeText(autoWalletAddress)
-      toast.success('Auto-Wallet address copied! Paste it into the faucet.')
-    }
-    window.open('https://faucet.0g.ai/', '_blank', 'noopener,noreferrer')
-  }
-
   const handleAddNetwork = async () => {
     // @ts-ignore - window.ethereum is not strictly typed
     if (!window.ethereum) {
@@ -65,13 +57,13 @@ export function OgStatus() {
           {
             chainId: ZG.CHAIN_ID_HEX,
             chainName: ZG.CHAIN_NAME,
-            rpcUrls: [ZG.RPC_URL],
+            rpcUrls: ['https://evmrpc-testnet.0g.ai'],
             nativeCurrency: ZG.CURRENCY,
             blockExplorerUrls: [ZG.BLOCK_EXPLORER],
           },
         ],
       })
-      toast.success('0G Mainnet successfully added to your wallet!')
+      toast.success('0G Galileo Testnet successfully added to your wallet!')
     } catch (e) {
       toast.error('Failed to add 0G network to your wallet.')
     }
@@ -122,7 +114,7 @@ export function OgStatus() {
               </div>
             </div>
             <div className="flex items-center justify-between mt-1">
-              <span className="text-xs text-emerald-600/80 dark:text-emerald-400/80">Mainnet Balance</span>
+              <span className="text-xs text-emerald-600/80 dark:text-emerald-400/80">Testnet Balance</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-400">
                   {balance !== null ? balance : '...'}
@@ -148,7 +140,7 @@ export function OgStatus() {
         </Link>
         <Button onClick={handleAddNetwork} variant="secondary" className="w-full text-xs font-medium" size="sm">
           <Wallet className="mr-2 h-3.5 w-3.5" />
-          Add 0G Mainnet to Wallet
+          Add 0G Testnet to Wallet
         </Button>
       </CardFooter>
     </Card>
