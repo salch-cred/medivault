@@ -10,6 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { decryptWithPin } from '@/lib/pin-crypto'
 import Link from 'next/link'
 
+const CARD_INITIAL = { opacity: 0, y: 16 }
+const CARD_ANIMATE = { opacity: 1, y: 0 }
+const PIN_CARD_INITIAL = { opacity: 0, scale: 0.96 }
+const PIN_CARD_ANIMATE = { opacity: 1, scale: 1 }
+
 function ScanInner() {
   const searchParams = useSearchParams()
   const peerId = searchParams.get('peer')
@@ -24,17 +29,11 @@ function ScanInner() {
   const peerConnRef = useRef<any>(null)
   const peerStatusRef = useRef<typeof peerStatus>('idle')
 
-  // Keep a ref in sync so async event handlers (which close over stale state)
-  // can read the latest status. Previously conn.on('close') captured the
-  // initial 'idle' value, so the "connection closed" branch misfired.
   useEffect(() => {
     peerStatusRef.current = peerStatus
   }, [peerStatus])
 
   useEffect(() => {
-    // Read the encrypted payload from the `?payload=` query param — the value
-    // the QR generator (emergency-card.tsx) actually emits. The `#payload=`
-    // fragment is kept as a fallback for any legacy links.
     const fromQuery = searchParams.get('payload')
     if (fromQuery) {
       setPayload(fromQuery)
@@ -86,12 +85,10 @@ function ScanInner() {
             peerStatusRef.current = 'approved'
             setPeerStatus('approved')
             setDecryptedText(data.payload)
-            // Removed peer.destroy() to avoid triggering close handler immediately
           } else if (data && data.type === 'DENIED') {
             peerStatusRef.current = 'denied'
             setPeerStatus('denied')
             setError('The owner denied your request for access.')
-            // Removed peer.destroy() 
           }
         })
 
@@ -155,11 +152,10 @@ function ScanInner() {
     )
   }
 
-  // Live Permission Mode
   if (peerId && !payload) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
+        <motion.div initial={CARD_INITIAL} animate={CARD_ANIMATE} className="w-full max-w-md">
           <Card className="border-border/50 shadow-xl overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
             <CardHeader className="text-center space-y-4 pt-8">
@@ -200,10 +196,9 @@ function ScanInner() {
     )
   }
 
-  // PIN Mode
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md">
+      <motion.div initial={PIN_CARD_INITIAL} animate={PIN_CARD_ANIMATE} className="w-full max-w-md">
         <Card className="border-border/50 shadow-xl overflow-hidden">
           <div className="h-2 w-full bg-gradient-to-r from-primary to-accent" />
           <CardHeader className="text-center space-y-4 pt-8">
