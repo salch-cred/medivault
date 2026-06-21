@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { useVault } from '@/lib/store'
 import { shortHash } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
+import { eciesEncrypt } from '@/lib/og/ecies'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
 
 export function ShareDialog({
@@ -106,6 +107,24 @@ export function ShareDialog({
       }
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
       const { rootHash } = await storage.shareToRecipient(bytes, resolvedPubKey)
+
+      // ── Instant fast-path cache ────────────────────────────────
+      // Also stash a self-contained, client-side-ECIES-encrypted copy of the
+      // SAME payload in the instant KV layer, keyed by the 0G root hash. The
+      // recipient reads + decrypts this on-device in ~1s instead of waiting
+      // (often minutes) for the small envelope to become locatable on 0G
+      // mainnet. Best-effort: the 0G copy above stays the durable source of
+      // truth, and the server only ever sees ciphertext.
+      try {
+        const envelope = await eciesEncrypt(resolvedPubKey, bytes)
+        await fetch('/api/og/share-envelope', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hash: rootHash, envelope }),
+        })
+      } catch (cacheErr) {
+        console.warn('Fast-path envelope cache failed (recipient falls back to 0G):', cacheErr)
+      }
 
       // Register share event on the backend registry so it shows in recipient's dashboard
       const regRes = await fetch('/api/og/share', {
