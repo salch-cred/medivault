@@ -49,6 +49,11 @@ type VaultState = {
   index: KvIndexAdapter | null
   records: RecordMeta[]
   summaries: Record<string, ExtractionResult>
+  // Ids whose summary failed to load this session (e.g. ciphertext never
+  // successfully stored on 0G during the earlier broken era). We short-circuit
+  // these so the vault page doesn't re-download+retry them on every render and
+  // flood the console with network errors. Cleared on connect/disconnect.
+  failedSummaries: Record<string, boolean>
   receivedRecords: any[]
   loadingRecords: boolean
   language: string
@@ -80,6 +85,7 @@ export const useVault = create<VaultState>((set, get) => ({
   index: null,
   records: [],
   summaries: {},
+  failedSummaries: {},
   receivedRecords: [],
   loadingRecords: false,
   language: 'English',
@@ -132,6 +138,7 @@ export const useVault = create<VaultState>((set, get) => ({
         index,
         records: cachedRecords,
         summaries: cachedSummaries,
+        failedSummaries: {},
         receivedRecords: [],
       })
       await get().refresh()
@@ -159,6 +166,7 @@ export const useVault = create<VaultState>((set, get) => ({
       index: null,
       records: [],
       summaries: {},
+      failedSummaries: {},
       receivedRecords: [],
     })
   },
@@ -185,8 +193,12 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   loadSummary: async (meta) => {
-    const { storage, key, summaries, address } = get()
+    const { storage, key, summaries, failedSummaries, address } = get()
     if (summaries[meta.id]) return summaries[meta.id]
+    // Already failed this session -> don't re-download / re-decrypt. This stops
+    // the vault page from hammering the network for records whose ciphertext
+    // isn't retrievable (and avoids the AxiosError ERR_NETWORK console flood).
+    if (failedSummaries[meta.id]) return null
     if (!storage || !key || !meta.summaryRootHash) return null
 
     try {
@@ -203,6 +215,7 @@ export const useVault = create<VaultState>((set, get) => ({
       return parsed
     } catch (err) {
       console.warn('Failed to load/decrypt summary:', err)
+      set({ failedSummaries: { ...get().failedSummaries, [meta.id]: true } })
       return null
     }
   },
