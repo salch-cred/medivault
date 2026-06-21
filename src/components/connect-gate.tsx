@@ -9,6 +9,40 @@ import { Disclaimer } from '@/components/disclaimer'
 import { useVault } from '@/lib/store'
 import { staggerContainer, staggerItem } from '@/lib/motion'
 
+function friendlyWalletError(error: string): string {
+  const lower = error.toLowerCase()
+
+  if (
+    lower.includes('ethers-user-denied') ||
+    lower.includes('action_rejected') ||
+    lower.includes('user rejected') ||
+    lower.includes('user denied') ||
+    lower.includes('request rejected') ||
+    lower.includes('4001')
+  ) {
+    return 'Wallet request was cancelled. Please connect again and approve the signature to unlock your vault.'
+  }
+
+  if (
+    lower.includes('walletconnect') ||
+    lower.includes('relay.walletconnect') ||
+    lower.includes('rpc.walletconnect') ||
+    lower.includes('websocket')
+  ) {
+    return 'WalletConnect could not connect. Please refresh and try again, or use the browser wallet extension directly.'
+  }
+
+  if (lower.includes('no provider') || lower.includes('ethereum provider')) {
+    return 'No wallet was found. Please install or enable a Web3 wallet, then try again.'
+  }
+
+  if (error.length > 180 || error.trim().startsWith('{')) {
+    return 'Wallet connection failed. Please refresh and try connecting again.'
+  }
+
+  return error
+}
+
 export function ConnectGate({ children }: { children: React.ReactNode }) {
   const { status, error } = useVault()
   const { isConnected } = useWeb3ModalAccount()
@@ -82,7 +116,7 @@ export function ConnectGate({ children }: { children: React.ReactNode }) {
           </motion.div>
           {error ? (
             <motion.p variants={staggerItem} className="text-sm text-destructive">
-              {error}
+              {friendlyWalletError(error)}
             </motion.p>
           ) : null}
           <motion.div
