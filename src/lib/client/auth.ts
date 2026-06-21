@@ -73,42 +73,35 @@ export async function buildAuthHeader(
 }
 
 /**
- * Create an ethers.JsonRpcProvider that injects the `x-medivault-auth` header
- * into every JSON-RPC request via a custom FetchRequest override.
+ * Create an ethers.JsonRpcProvider that sends the `x-medivault-auth` header on
+ * every JSON-RPC request.
  *
- * This is needed because the /api/og/rpc proxy now requires auth (added in
- * security fixes), but ethers.JsonRpcProvider does not send custom headers
- * by default.
+ * ethers v6 JsonRpcProvider has NO public `fetch` property to override, so we
+ * inject the header by constructing the provider from a FetchRequest that
+ * already carries it. ethers clones this FetchRequest (preserving headers) for
+ * each outgoing request, so the header is sent on every call for the life of
+ * the provider instance. Providers are created per-operation and the auth
+ * header is cached for 70s, so a single instance never outlives a valid header.
  *
- * The signer is used to build the auth header on-demand (with caching).
- * If signer or address is null, falls back to a plain provider (best effort).
+ * The network is pinned to 0G (chain 16661) as a static network so the provider
+ * does not issue an eth_chainId detection round-trip on startup (which is what
+ * produced the "JsonRpcProvider failed to detect network" retry loop).
+ *
+ * If signer or address is null, the provider is still returned (best effort)
+ * but without an auth header — read-only methods are exempt on the proxy.
  */
 export async function createAuthedProvider(
   signer: ethers.Signer | null,
   address: string | null,
   rpcUrl: string,
 ): Promise<ethers.JsonRpcProvider> {
-  if (!signer || !address) {
-    // Best-effort fallback: try without auth (may 401, but won't crash).
-    return new ethers.JsonRpcProvider(rpcUrl)
+  const fetchReq = new ethers.FetchRequest(rpcUrl)
+  const auth = await buildAuthHeader(signer, address)
+  if (auth) {
+    fetchReq.setHeader('x-medivault-auth', auth)
   }
-
-  const provider = new ethers.JsonRpcProvider(rpcUrl)
-  const originalFetch = provider.fetch.bind(provider)
-
-  // Override fetch to inject auth header on every request.
-  provider.fetch = async (req: ethers.FetchRequest | string): Promise<ethers.FetchResponse> => {
-    const auth = await buildAuthHeader(signer, address)
-    if (auth) {
-      if (typeof req === 'string') {
-        req = new ethers.FetchRequest(req)
-      }
-      req.setHeader('x-medivault-auth', auth)
-    }
-    return originalFetch(req)
-  }
-
-  return provider
+  const network = new ethers.Network('0g-mainnet', 16661)
+  return new ethers.JsonRpcProvider(fetchReq, network, { staticNetwork: network })
 }
 
 /**
