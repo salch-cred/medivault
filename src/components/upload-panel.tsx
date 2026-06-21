@@ -150,19 +150,22 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         // 🔄 Background finalize: the real (slow) on-chain 0G storage. The UI is
         // already done; the user is on the record page reading from cache.
+        //
+        // IMPORTANT: finalize file then summary SEQUENTIALLY (not in parallel).
+        // The single auto-wallet can only broadcast one Flow `submit` tx at a
+        // time — running both in parallel causes both to use the same nonce,
+        // which produces a require(false) revert on the second submission.
         void (async () => {
           try {
-            const [{ txHash }] = await Promise.all([
-              filePrep.finalize(),
-              summaryPrep.finalize(),
-            ])
+            const fileResult = await filePrep.finalize()
+            await summaryPrep.finalize()
             await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
             setUploadStatus(meta.id, 'stored')
             // File + summary are on 0G -> publish the durable, cross-device index
             // so this record survives logout/login and is restorable anywhere.
             useVault.getState().syncRemoteIndex()
             toast.success('Backed up to 0G ✓', {
-              description: txHash ? `tx ${txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
+              description: fileResult.txHash ? `tx ${fileResult.txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
             })
           } catch (bgErr) {
             console.error('Background 0G backup failed; auto-retrying until it lands:', bgErr)

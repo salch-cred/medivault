@@ -319,6 +319,11 @@ export const useVault = create<VaultState>((set, get) => ({
   // Single attempt to store a record's original + summary on 0G from the
   // locally-cached original bytes. Returns true on success. Used by autoBackup
   // (the retry loop) and the upload flow.
+  //
+  // IMPORTANT: uploads file then summary SEQUENTIALLY. The single auto-wallet
+  // can only broadcast one Flow `submit` tx at a time — running both in
+  // parallel causes both to use the same nonce, producing a require(false)
+  // revert on the second submission.
   backupRecord: async (meta) => {
     const { storage, index, summaries } = get()
     if (!storage) return false
@@ -330,13 +335,13 @@ export const useVault = create<VaultState>((set, get) => ({
     }
     get().setUploadStatus(meta.id, 'pending')
     try {
-      const uploads: Promise<unknown>[] = [storage.uploadEncrypted(original, recKey)]
+      // Sequential: file first, then summary. Parallel uploads race the nonce.
+      await storage.uploadEncrypted(original, recKey)
       const summary = summaries[meta.id]
       if (summary) {
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
-        uploads.push(storage.uploadEncrypted(summaryBytes, recKey))
+        await storage.uploadEncrypted(summaryBytes, recKey)
       }
-      await Promise.all(uploads)
       if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
       get().setUploadStatus(meta.id, 'stored')
       // Record bytes are now on 0G -> publish the durable cross-device index.
