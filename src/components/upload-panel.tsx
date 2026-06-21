@@ -11,7 +11,7 @@ import { OptionsBar } from '@/components/options-bar'
 import { useVault } from '@/lib/store'
 import { extractText } from '@/lib/doc/parse'
 import { normalizeExtraction } from '@/lib/ai/normalize'
-import { buildAuthHeader } from '@/lib/client/auth'
+import { buildAuthHeader, createAuthedProvider } from '@/lib/client/auth'
 import { deriveRecordKey, newRecordSalt, saltToHex } from '@/lib/og/crypto'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
 import { ZG } from '@/lib/og/config'
@@ -39,7 +39,7 @@ const PROGRESS_INITIAL = { opacity: 0 }
 const PROGRESS_ANIMATE = { opacity: 1 }
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, signer } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [detail, setDetail] = useState('')
@@ -88,7 +88,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setStage('encrypting')
         setPct(75)
 
-        const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
+        // Use an authed provider so the RPC proxy accepts the balance check.
+        const provider = createAuthedProvider(signer, address, ZG.RPC_URL)
         const balance = await provider.getBalance(autoWalletAddress!)
         if (balance === 0n) {
           throw new Error('Insufficient 0G gas! Please click "Fund Auto-Wallet" in the status panel on the right.')
@@ -183,7 +184,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, signer, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, onUploaded],
   )
 
   return (
@@ -218,7 +219,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors',
             dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/60',
             busy && 'pointer-events-none opacity-70',
-          )}
+          )
         >
           <input
             ref={inputRef}
