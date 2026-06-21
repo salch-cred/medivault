@@ -7,6 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useVault } from '@/lib/store'
 
+// Build a QR code URL for the wallet address using the public qrserver API.
+const QR_BASE = 'https://api.qrserver.com/v1/create-qr-code/'
+
 export function MyShareId() {
   const { address } = useVault()
   const [copied, setCopied] = useState(false)
@@ -15,7 +18,7 @@ export function MyShareId() {
   if (!address) return null
 
   const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(address)}&bgcolor=ffffff&color=000000&margin=10`
+  const qrUrl = `${QR_BASE}?size=200x200&data=${encodeURIComponent(address)}&bgcolor=ffffff&color=000000&margin=10`
 
   const copyAddress = () => {
     navigator.clipboard.writeText(address)
