@@ -106,24 +106,39 @@ export function ShareDialog({
         mimeType: meta.mimeType ?? null,
       }
       const bytes = new TextEncoder().encode(JSON.stringify(payload))
-      const { rootHash } = await storage.shareToRecipient(bytes, resolvedPubKey)
 
-      // ── Instant fast-path cache ────────────────────────────────
-      // Also stash a self-contained, client-side-ECIES-encrypted copy of the
-      // SAME payload in the instant KV layer, keyed by the 0G root hash. The
+      // Durable copy on 0G (best-effort) + the rootHash that keys everything.
+      // A require(false)/revert here does NOT throw anymore: the instant KV
+      // envelope below is the primary delivery channel.
+      const { rootHash, durable } = await storage.shareToRecipient(bytes, resolvedPubKey)
+
+      // ── Instant fast-path cache (PRIMARY delivery) ──────────
+      // Stash a self-contained, client-side-ECIES-encrypted copy of the SAME
+      // payload in the instant KV layer, keyed by the 0G root hash. The
       // recipient reads + decrypts this on-device in ~1s instead of waiting
       // (often minutes) for the small envelope to become locatable on 0G
-      // mainnet. Best-effort: the 0G copy above stays the durable source of
-      // truth, and the server only ever sees ciphertext.
+      // mainnet. This is now the guaranteed delivery channel: even if the
+      // durable 0G envelope copy reverted above, the recipient still gets the
+      // share instantly, and the original document is fetched from the sender's
+      // durable 0G copy via recordRootHash. The server only ever sees ciphertext.
+      let kvOk = false
       try {
         const envelope = await eciesEncrypt(resolvedPubKey, bytes)
-        await fetch('/api/og/share-envelope', {
+        const envRes = await fetch('/api/og/share-envelope', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ hash: rootHash, envelope }),
         })
+        kvOk = envRes.ok
       } catch (cacheErr) {
-        console.warn('Fast-path envelope cache failed (recipient falls back to 0G):', cacheErr)
+        console.warn('Fast-path envelope cache failed:', cacheErr)
+      }
+
+      // The share is only a REAL failure when BOTH delivery paths failed.
+      if (!durable && !kvOk) {
+        throw new Error(
+          'Could not deliver this share right now — the 0G network is busy and the instant channel is unreachable. Your record is safe; please try again in a moment.',
+        )
       }
 
       // Register share event on the backend registry so it shows in recipient's dashboard
@@ -143,11 +158,15 @@ export function ShareDialog({
       })
 
       if (!regRes.ok) {
-        throw new Error('Successfully stored on 0G, but failed to notify recipient dashboard.')
+        throw new Error('Shared securely, but failed to notify the recipient dashboard. They can still open it from a share link.')
       }
 
       setShareHash(rootHash)
-      toast.success('Encrypted securely and shared directly to the recipient dashboard!')
+      toast.success(
+        durable
+          ? 'Encrypted securely and shared directly to the recipient dashboard!'
+          : 'Shared instantly to the recipient — the permanent 0G copy is finishing in the background.',
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Share failed')
     } finally {

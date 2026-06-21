@@ -608,12 +608,24 @@ export class OgStorageAdapter implements StorageAdapter {
     )
   }
 
-  /** ECIES: encrypt to a doctor's wallet public key so only they can decrypt. */
+  /**
+   * ECIES: encrypt to a doctor's wallet public key so only they can decrypt,
+   * then upload to 0G as the durable copy of the share envelope.
+   *
+   * The durable 0G upload is BEST-EFFORT. The share dialog also writes an
+   * instant, client-ECIES-encrypted copy of the SAME payload to the KV
+   * fast-path (keyed by this rootHash), and the recipient downloads the
+   * ORIGINAL document from the sender's durable 0G copy via the payload's
+   * recordRootHash. So a require(false)/revert here (the envelope entry is
+   * already registered or mid-registration) must NOT fail the whole share. We
+   * always return the locally-computed rootHash plus a `durable` flag so the
+   * caller can fall back to the instant KV channel.
+   */
   async shareToRecipient(
     data: Uint8Array,
     recipientPubKey: string,
-  ): Promise<{ rootHash: string }> {
-    // Normalize to a compressed public key.
+  ): Promise<{ rootHash: string; durable: boolean }> {
+    // Normalize to a compressed public key (throws on a genuinely invalid key).
     const compressed = ethers.SigningKey.computePublicKey(recipientPubKey, true)
     const mem = new MemData(data)
     const [tree, treeErr] = (await (mem as unknown as {
@@ -622,16 +634,27 @@ export class OgStorageAdapter implements StorageAdapter {
     if (treeErr) throw new Error(String(treeErr))
     const rootHash = (tree as { rootHash: () => string }).rootHash()
 
-    await this.uploadWithRetry(
-      mem,
-      {
-        encryption: { type: 'ecies', recipientPubKey: compressed },
-        finalityRequired: false,
-      },
-      rootHash,
-    )
-    markRecentUpload(rootHash)
-    return { rootHash }
+    let durable = true
+    try {
+      await this.uploadWithRetry(
+        mem,
+        {
+          encryption: { type: 'ecies', recipientPubKey: compressed },
+          finalityRequired: false,
+        },
+        rootHash,
+      )
+      markRecentUpload(rootHash)
+    } catch (e) {
+      // The durable copy didn't land (revert / network / gas). The instant KV
+      // envelope written by the caller delivers this share, so don't fail.
+      durable = false
+      console.warn(
+        'Durable 0G share-envelope upload failed; the instant KV envelope will deliver this share. Error:',
+        e,
+      )
+    }
+    return { rootHash, durable }
   }
 
   /**

@@ -27,11 +27,17 @@ export interface StorageAdapter {
     onProgress?: (message: string) => void,
   ): Promise<Uint8Array>
 
-  /** Encrypt to a recipient wallet public key (ECIES) and upload. */
+  /**
+   * Encrypt to a recipient wallet public key (ECIES) and upload to 0G as the
+   * durable copy of the share envelope. The durable upload is best-effort:
+   * `durable` is false when the on-chain copy did not land (e.g. require(false)
+   * because the entry is already stored / mid-registration), in which case the
+   * caller delivers via the instant KV envelope instead.
+   */
   shareToRecipient(
     data: Uint8Array,
     recipientPubKey: string,
-  ): Promise<{ rootHash: string }>
+  ): Promise<{ rootHash: string; durable: boolean }>
 
   /**
    * Verify the stored ciphertext still matches its Merkle root. `onProgress`
