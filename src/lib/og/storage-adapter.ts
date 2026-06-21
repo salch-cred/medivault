@@ -108,21 +108,94 @@ export class OgStorageAdapter implements StorageAdapter {
   }
 
   /**
+   * Evict any transaction stuck in the mempool before we submit a new one.
+   *
+   * The REPLACEMENT_UNDERPRICED loop happens because a prior Flow `submit` tx
+   * is still pending at the wallet's current nonce: the SDK reuses that nonce,
+   * and a floor-based gas bump rarely beats the stuck tx by the required 110%.
+   * Here we detect the gap (pending nonce > latest mined nonce) and, for each
+   * stuck nonce, broadcast a 0-value self-transfer whose gasPrice escalates
+   * (4x floor, doubling on each 'underpriced' rejection) until it replaces the
+   * stuck tx and mines. Afterwards the SDK submits on a fresh, clean nonce.
+   *
+   * Fully best-effort: any unexpected error is swallowed so the normal upload
+   * retry path still runs.
+   */
+  private async clearStuckNonce(): Promise<void> {
+    const provider = (this.signer as ethers.Signer & {
+      provider?: ethers.Provider | null
+    }).provider
+    if (!provider) return
+
+    let address: string
+    try {
+      address = await this.signer.getAddress()
+    } catch {
+      return
+    }
+
+    let latest: number
+    let pending: number
+    try {
+      ;[latest, pending] = await Promise.all([
+        provider.getTransactionCount(address, 'latest'),
+        provider.getTransactionCount(address, 'pending'),
+      ])
+    } catch {
+      return
+    }
+
+    if (pending <= latest) return // nothing stuck
+
+    const floor = (await this.networkGasPrice()) ?? 1_000_000_000n // 1 gwei fallback
+    console.warn(
+      `Detected ${pending - latest} stuck pending transaction(s) (nonce ${latest}..${pending - 1}); clearing before upload.`,
+    )
+
+    for (let nonce = latest; nonce < pending; nonce++) {
+      let gasPrice = floor * 4n
+      for (let i = 0; i < 6; i++) {
+        try {
+          const tx = await this.signer.sendTransaction({
+            to: address,
+            value: 0n,
+            nonce,
+            gasPrice,
+          })
+          await tx.wait(1)
+          break // this nonce is cleared
+        } catch (e) {
+          const s = String(e)
+          // Still underpriced vs the stuck tx -> double and try again.
+          if (/replacement|underpriced|fee too low|max fee per gas/i.test(s)) {
+            gasPrice = gasPrice * 2n
+            continue
+          }
+          // Already mined / nonce consumed / unknown -> stop on this nonce.
+          break
+        }
+      }
+    }
+  }
+
+  /**
    * Upload a prepared blob through the 0G SDK with smart, gas-aware retries.
    *
    * Why explicit gas handling: the SDK submits the Flow `submit` tx at the
    * provider's suggested gasPrice when no gasPrice is supplied. Repeated
    * attempts therefore reuse the same (latest) nonce at the same floor price,
    * so the first attempt sticks in the mempool and every retry is rejected
-   * with "replacement fee too low" / REPLACEMENT_UNDERPRICED. We instead start
-   * above floor (faster inclusion) and escalate each retry (>=110% is required
-   * to replace a pending tx), which also clears any tx stuck from earlier runs.
+   * with "replacement fee too low" / REPLACEMENT_UNDERPRICED. We first clear
+   * any already-stuck nonce, then start above floor (faster inclusion) and
+   * escalate each retry (>=110% is required to replace a pending tx).
    */
   private async uploadWithRetry(
     blob: unknown,
     uploadOpts: unknown,
   ): Promise<{ txHash?: string } | string | undefined> {
     await this.assertIndexerHasNodes()
+    // Pre-flight: unstick any leftover pending tx so the SDK gets a clean nonce.
+    await this.clearStuckNonce()
 
     const floor = await this.networkGasPrice()
     // First attempt: ~2x floor for fast (often single-block) inclusion.
@@ -174,6 +247,11 @@ export class OgStorageAdapter implements StorageAdapter {
       }
 
       if (attempt < maxRetries - 1) {
+        // An underpriced error means a tx is stuck again -- evict it so the next
+        // attempt submits on a clean nonce rather than re-fighting the mempool.
+        if (isUnderpriced) {
+          await this.clearStuckNonce()
+        }
         // Ensure we have a base price even if the first lookup failed.
         if (gasPrice === undefined) {
           const f = await this.networkGasPrice()
