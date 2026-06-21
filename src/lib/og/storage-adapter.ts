@@ -52,6 +52,13 @@ const NOT_FOUND_RE =
 const SUBMIT_REVERT_RE =
   /execution reverted|require\(false\)|call_exception|no data present|missing revert data/i
 
+// The 0G SDK may report an already-durable root as an "error" tuple, especially
+// when a previous attempt submitted the same bytes and a retry races with
+// propagation. This is a success condition: the content-addressed root is
+// already present on 0G, so the upload is done.
+const ALREADY_STORED_RE =
+  /file is found at root hash|file already exists|already uploaded|already stored|already registered|root hash[^]*found/i
+
 // A GENUINE Merkle-proof / hash mismatch -- i.e. the stored bytes no longer
 // match the recorded root hash (real tamper detection). This is deliberately
 // narrow: it must indicate an actual mismatch/verification failure, NOT merely
@@ -450,6 +457,16 @@ export class OgStorageAdapter implements StorageAdapter {
       if (!lastErr) return tx
 
       const errStr = String(lastErr)
+
+      // Already durable on 0G is success, not failure. The SDK can surface this
+      // as an error tuple such as "file is found at root hash: 0x..." when a
+      // retry races with propagation or the same encrypted blob is uploaded
+      // again. Since the root is content-addressed, no further submit is needed.
+      if (ALREADY_STORED_RE.test(errStr)) {
+        console.warn('0G upload: root already stored; treating as success.', lastErr)
+        markRecentUpload(rootHash)
+        return tx
+      }
 
       // Permanent errors: never retry.
       if (/insufficient funds|exceeds balance|invalid (sender|signature)|malformed/i.test(errStr)) {
