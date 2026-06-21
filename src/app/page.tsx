@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { motion, useReducedMotion } from 'framer-motion'
+import { motion, useReducedMotion, type Transition } from 'framer-motion'
 import {
   ShieldPlus,
   Lock,
@@ -23,6 +23,21 @@ import {
 } from '@/lib/motion'
 
 /* ------------------------------------------------------------------ */
+/* Motion presets — kept as module-level consts (single-brace JSX) to   */
+/* stay build-safe and avoid inline object literals.                    */
+/* ------------------------------------------------------------------ */
+
+const VIEWPORT_ONCE = { once: true }
+const VIEWPORT_REVEAL = { once: true, margin: '-80px' }
+const FEATURE_HEADER_INITIAL = { opacity: 0, y: 20 }
+const REVEAL_IN_VIEW = { opacity: 1, y: 0 }
+const CTA_INITIAL = { opacity: 0, y: 30 }
+
+function heroWordTransition(i: number): Transition {
+  return { ...springSoft, delay: 0.15 + i * 0.07 }
+}
+
+/* ------------------------------------------------------------------ */
 /* Hero — word-by-word staggered reveal (purelanding-style editorial)  */
 /* ------------------------------------------------------------------ */
 
@@ -37,7 +52,7 @@ function HeroHeadline() {
           className="inline-block"
           initial={reduce ? { opacity: 0 } : { opacity: 0, y: '0.5em' }}
           animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
-          transition={{ ...springSoft, delay: 0.15 + i * 0.07 }}
+          transition={heroWordTransition(i)}
         >
           {i === 4 ? (
             // Last word gets the gradient emphasis.
@@ -97,17 +112,30 @@ const FEATURES: Feature[] = [
     tone: 'from-blue-500/10 to-transparent',
   },
   {
+    icon: Sparkles,
+    title: 'AI plain-language summaries',
+    body: 'Dense lab panels and reports are decoded into clear, plain-language summaries you can actually understand — generated on 0G, never handed to a centralized cloud.',
+    tone: 'from-amber-500/10 to-transparent',
+  },
+  {
     icon: Share2,
-    title: 'Granular sharing',
-    body: 'Share via ECIES — only your doctor\u2019s exact wallet can decipher the payload.',
+    title: 'Share the whole record',
+    body: 'Send the original PDF or image plus its AI summary to your doctor, encrypted with ECIES so only their exact wallet can open it. They get the real file, not a screenshot.',
     tone: 'from-emerald-500/10 to-transparent',
+    span: 'md:col-span-2',
+  },
+  {
+    icon: Database,
+    title: 'Stored for life',
+    body: 'Records are backed up to 0G decentralized storage and auto-retry until they are safely saved — so your history survives logouts, new devices, and time itself.',
+    tone: 'from-cyan-500/10 to-transparent',
+    span: 'md:col-span-2',
   },
   {
     icon: Cpu,
     title: 'Decentralized compute',
-    body: '0G Compute parses dense lab results into plain language without centralized cloud APIs that monitor your traffic.',
+    body: '0G Compute does the heavy lifting — no centralized cloud APIs monitoring your medical traffic.',
     tone: 'from-purple-500/10 to-transparent',
-    span: 'md:col-span-2',
   },
 ]
 
@@ -207,7 +235,7 @@ export default function LandingPage() {
               variants={staggerItem}
               className="mx-auto mt-7 max-w-2xl text-pretty text-lg text-muted-foreground md:text-xl"
             >
-              Store, decode, and manage your medical records. Secured by zero-knowledge
+              Store, decode, and share your medical records. Secured by zero-knowledge
               architecture on the 0G Network — readable by absolutely no one but you.
             </motion.p>
 
@@ -229,7 +257,7 @@ export default function LandingPage() {
           variants={staggerContainer(0.12, 0.1)}
           initial="hidden"
           whileInView="show"
-          viewport={{ once: true, margin: '-80px' }}
+          viewport={VIEWPORT_REVEAL}
           className="border-y border-border/40 bg-muted/20"
         >
           <div className="container px-safe">
@@ -253,9 +281,9 @@ export default function LandingPage() {
         {/* ---------- Feature section ---------- */}
         <section className="container px-safe py-20 md:py-32">
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+            initial={FEATURE_HEADER_INITIAL}
+            whileInView={REVEAL_IN_VIEW}
+            viewport={VIEWPORT_ONCE}
             transition={spring}
             className="mb-10 max-w-2xl md:mb-16"
           >
@@ -275,7 +303,7 @@ export default function LandingPage() {
             variants={staggerContainer(0.1, 0.05)}
             initial="hidden"
             whileInView="show"
-            viewport={{ once: true, margin: '-60px' }}
+            viewport={VIEWPORT_REVEAL}
             className="grid grid-cols-1 gap-5 md:grid-cols-3"
           >
             {FEATURES.map((f) => (
@@ -287,9 +315,9 @@ export default function LandingPage() {
         {/* ---------- Big CTA ---------- */}
         <section className="container px-safe pb-24 md:pb-36">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+            initial={CTA_INITIAL}
+            whileInView={REVEAL_IN_VIEW}
+            viewport={VIEWPORT_ONCE}
             transition={spring}
             className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-gradient-to-br from-foreground to-foreground/80 px-8 py-16 text-center text-background md:rounded-[2.5rem] md:px-16 md:py-24"
           >
