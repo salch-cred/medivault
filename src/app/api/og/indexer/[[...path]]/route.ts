@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-const OG_TESTNET_INDEXER = 'https://indexer-storage-testnet-turbo.0g.ai'
+const OG_MAINNET_INDEXER = 'https://indexer-storage-turbo.0g.ai'
 
 export async function POST(req: Request, { params }: { params: { path?: string[] } }) {
   return handleProxy(req, params.path ?? [])
@@ -25,7 +25,7 @@ async function handleProxy(req: Request, pathArray: string[] = []) {
   try {
     const path = pathArray.join('/')
     const { search } = new URL(req.url)
-    const targetUrl = `${OG_TESTNET_INDEXER}/${path}${search}`
+    const targetUrl = `${OG_MAINNET_INDEXER}/${path}${search}`
 
     const headers = new Headers()
     req.headers.forEach((value, key) => {

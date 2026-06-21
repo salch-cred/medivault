@@ -12,8 +12,8 @@ import Link from 'next/link'
 
 const ITEMS = [
   { icon: Link2, label: 'Chain', value: `${ZG.CHAIN_NAME} · ${ZG.CHAIN_ID}` },
-  { icon: HardDrive, label: 'Storage indexer', value: 'Galileo testnet' },
-  { icon: Database, label: 'KV index', value: '0G-KV testnet' },
+  { icon: HardDrive, label: 'Storage indexer', value: 'mainnet' },
+  { icon: Database, label: 'KV index', value: '0G-KV mainnet' },
   { icon: Cpu, label: 'AI compute', value: '0G Compute router' },
 ]
 
@@ -57,15 +57,15 @@ export function OgStatus() {
           {
             chainId: ZG.CHAIN_ID_HEX,
             chainName: ZG.CHAIN_NAME,
-            rpcUrls: ['https://evmrpc-testnet.0g.ai'],
+            rpcUrls: ['https://evmrpc.0g.ai'],
             nativeCurrency: ZG.CURRENCY,
             blockExplorerUrls: [ZG.BLOCK_EXPLORER],
           },
         ],
       })
-      toast.success('0G Galileo Testnet successfully added to your wallet!')
+      toast.success('0G Mainnet successfully added to your wallet!')
     } catch (e) {
-      toast.error('Failed to add 0G network to your wallet.')
+      toast.error('Failed to add 0G Mainnet to your wallet.')
     }
   }
 
@@ -114,7 +114,7 @@ export function OgStatus() {
               </div>
             </div>
             <div className="flex items-center justify-between mt-1">
-              <span className="text-xs text-emerald-600/80 dark:text-emerald-400/80">Testnet Balance</span>
+              <span className="text-xs text-emerald-600/80 dark:text-emerald-400/80">Mainnet Balance</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-400">
                   {balance !== null ? balance : '...'}
@@ -140,7 +140,7 @@ export function OgStatus() {
         </Link>
         <Button onClick={handleAddNetwork} variant="secondary" className="w-full text-xs font-medium" size="sm">
           <Wallet className="mr-2 h-3.5 w-3.5" />
-          Add 0G Testnet to Wallet
+          Add 0G Mainnet to Wallet
         </Button>
       </CardFooter>
     </Card>

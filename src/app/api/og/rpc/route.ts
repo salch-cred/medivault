@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 
-const OG_TESTNET_RPC = 'https://evmrpc-testnet.0g.ai'
+const OG_MAINNET_RPC = 'https://evmrpc.0g.ai'
 
 export async function POST(req: Request) {
   try {
     const body = await req.text()
 
-    // Forward to 0G Galileo Testnet RPC (chain 16602).
-    // This must match src/lib/og/config.ts, README, and .env.example.
-    const response = await fetch(OG_TESTNET_RPC, {
+    // Forward to 0G Mainnet RPC (chain 16661).
+    // This must match src/lib/og/config.ts and the deployed app UI.
+    const response = await fetch(OG_MAINNET_RPC, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
