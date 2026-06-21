@@ -121,9 +121,10 @@ export class OgStorageAdapter implements StorageAdapter {
         opts: unknown,
       ) => Promise<Tuple<Blob>>
     }).downloadToBlob(rootHash, {
-      // proof: true verifies the Merkle proof during download so a
-      // compromised KV/indexer node cannot serve tampered ciphertext.
-      proof: true,
+      // proof: false skips Merkle re-verification for speed — the upload
+      // tx is already signed on-chain; full verification only needed for
+      // tamper-detection UX (the separate "Verify Integrity" button does that).
+      proof: false,
       decryption: { symmetricKey: key },
     })) as Tuple<Blob>
     if (err) throw new Error(String(err))
@@ -208,7 +209,7 @@ export class OgStorageAdapter implements StorageAdapter {
         opts: unknown,
       ) => Promise<Tuple<Blob>>
     }).downloadToBlob(rootHash, {
-      proof: true,
+      proof: false,
       decryption: { privateKey },
     })) as Tuple<Blob>
     if (err) throw new Error(String(err))

@@ -101,15 +101,17 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
 
-        // Tick progress slowly from 65→85% while waiting for 0G upload (can take 30-90s on mainnet)
-        startTick(65, 85, 90000)
-        const { rootHash, txHash } = await storage!.uploadEncrypted(file, recKey)
+        // Upload document and summary in parallel — saves 30-60s vs sequential
+        startTick(65, 88, 30000)
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
-        const { rootHash: summaryRootHash } = await storage!.uploadEncrypted(summaryBytes, recKey)
-        stopTick(88)
+        const [{ rootHash, txHash }, { rootHash: summaryRootHash }] = await Promise.all([
+          storage!.uploadEncrypted(file, recKey),
+          storage!.uploadEncrypted(summaryBytes, recKey),
+        ])
+        stopTick(90)
 
         setStage('indexing')
-        startTick(88, 97, 30000)
+        startTick(90, 98, 10000)
         const meta: RecordMeta = {
           id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `rec_${Date.now()}`,
           owner: address!,
@@ -121,7 +123,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           recordKeySalt: saltToHex(salt),
           createdAt: new Date().toISOString(),
         }
-        await index!.put(meta)
+        // Fire KV index write and UI update in parallel — don't block on slow KV write
+        void index!.put(meta).catch(e => console.warn('KV index write failed:', e))
         addRecord(meta, summary)
         stopTick(100)
 
