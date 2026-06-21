@@ -62,7 +62,7 @@ export function AutoConnectManager() {
       attemptedAddress.current = normalizedAddress
       connecting.current = true
       const provider = new BrowserProvider(walletProvider)
-      void connect(provider, address).finally(() => {
+      void connect(provider, normalizedAddress).finally(() => {
         connecting.current = false
       })
     }
