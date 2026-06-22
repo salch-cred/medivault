@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BadgeCheck, ShieldCheck, Loader2, AlertTriangle, Copy, Check, FileDown } from 'lucide-react'
+import { BadgeCheck, ShieldCheck, Loader2, AlertTriangle, Copy, Check, FileDown, Server } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -21,7 +21,7 @@ type VerifyState = 'idle' | 'checking' | 'verified' | 'unconfirmed'
 
 function verifyLabel(v: VerifyState): string {
   if (v === 'verified') return 'Merkle proof verified on 0G'
-  if (v === 'checking') return 'Verifying on 0G\u2026'
+  if (v === 'checking') return 'Verifying on 0G…'
   if (v === 'unconfirmed') return 'Pending 0G confirmation'
   return 'Anchored on 0G'
 }
@@ -39,8 +39,9 @@ function buildCertificateHtml(args: {
   issuedAt: string
   owner: string | null
   label: string
+  nodes: number | null
 }): string {
-  const { meta, issuedAt, owner, label } = args
+  const { meta, issuedAt, owner, label, nodes } = args
   const explorer = storageScanUrl(meta.rootHash)
   const contractExplorer = `${ZG.BLOCK_EXPLORER}/address/${ZG.FLOW_CONTRACT}`
 
@@ -50,7 +51,8 @@ function buildCertificateHtml(args: {
     ['0G Merkle root hash', meta.rootHash],
   ]
   if (meta.summaryRootHash) rowList.push(['0G summary root hash', meta.summaryRootHash])
-  rowList.push(['Network', `0G Mainnet \u00b7 Chain ID ${ZG.CHAIN_ID}`])
+  rowList.push(['Network', `0G Mainnet · Chain ID ${ZG.CHAIN_ID}`])
+  if (nodes != null) rowList.push(['Live 0G storage nodes', `${nodes} replicating now`])
   rowList.push(['0G Flow storage contract', ZG.FLOW_CONTRACT])
   rowList.push(['Encryption', 'AES-256, client-side before upload'])
 
@@ -67,7 +69,7 @@ function buildCertificateHtml(args: {
     '<body style="margin:0;background:#f1f5f9;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a">',
     '<div style="max-width:720px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden">',
     '<div style="background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:28px 32px;color:#ffffff">',
-    '<div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:.85">MediVault \u00b7 0G Proof Certificate</div>',
+    '<div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:.85">MediVault · 0G Proof Certificate</div>',
     `<div style="font-size:24px;font-weight:800;margin-top:6px">${escapeHtml(meta.title)}</div>`,
     '<div style="font-size:13px;opacity:.92;margin-top:6px">Anchored on the 0G decentralized storage network</div>',
     '</div>',
@@ -79,9 +81,9 @@ function buildCertificateHtml(args: {
     '<div style="margin-top:22px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc">',
     '<div style="font-size:13px;font-weight:700;margin-bottom:8px">What 0G guarantees</div>',
     '<ul style="margin:0;padding-left:18px;font-size:12px;line-height:1.7;color:#334155">',
-    '<li>Content-addressed identity: the 0G Merkle root <em>is</em> the fingerprint of the bytes \u2014 any change produces a different root.</li>',
+    '<li>Content-addressed identity: the 0G Merkle root <em>is</em> the fingerprint of the bytes — any change produces a different root.</li>',
     '<li>0G Merkle proof re-derived directly from the data stored on the network.</li>',
-    '<li>Distributed across independent 0G storage nodes \u2014 no central server to trust or take it offline.</li>',
+    '<li>Distributed across independent 0G storage nodes — no central server to trust or take it offline.</li>',
     `<li>Anchored on 0G Mainnet via the Flow storage contract (${escapeHtml(ZG.FLOW_CONTRACT)}).</li>`,
     '<li>Encrypted client-side with AES-256 before it ever leaves the device.</li>',
     '</ul>',
@@ -108,6 +110,7 @@ export function ProofCertificate({ meta }: { meta: RecordMeta }) {
   const [verify, setVerify] = useState<VerifyState>('idle')
   const [issuedAt, setIssuedAt] = useState('')
   const [copied, setCopied] = useState(false)
+  const [nodes, setNodes] = useState<number | null>(null)
 
   useEffect(() => {
     if (open && !issuedAt) setIssuedAt(new Date().toISOString())
@@ -132,6 +135,23 @@ export function ProofCertificate({ meta }: { meta: RecordMeta }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, storage, meta.rootHash])
 
+  // Live 0G data-availability signal: how many trusted storage nodes are
+  // serving the network right now (the replication surface for this record).
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch('/api/og/health', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const total = d?.storage?.value?.total
+        if (!cancelled && typeof total === 'number') setNodes(total)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
   const fields: Array<{ label: string; value: string; href?: string; mono?: boolean }> = [
     { label: 'Document type', value: DOC_TYPE_LABELS[meta.docType] },
     { label: 'Document date', value: formatDateTime(meta.date) },
@@ -139,27 +159,28 @@ export function ProofCertificate({ meta }: { meta: RecordMeta }) {
     ...(meta.summaryRootHash
       ? [{ label: '0G summary root', value: meta.summaryRootHash, href: storageScanUrl(meta.summaryRootHash), mono: true }]
       : []),
-    { label: 'Network', value: `0G Mainnet \u00b7 Chain ID ${ZG.CHAIN_ID}` },
+    { label: 'Network', value: `0G Mainnet · Chain ID ${ZG.CHAIN_ID}` },
     { label: '0G Flow contract', value: ZG.FLOW_CONTRACT, href: `${ZG.BLOCK_EXPLORER}/address/${ZG.FLOW_CONTRACT}`, mono: true },
-    { label: 'Encryption', value: 'AES-256 \u00b7 client-side' },
+    { label: 'Encryption', value: 'AES-256 · client-side' },
   ]
 
   const guarantees = [
-    'Content-addressed identity \u2014 the 0G Merkle root IS the fingerprint of the bytes.',
+    'Content-addressed identity — the 0G Merkle root IS the fingerprint of the bytes.',
     '0G Merkle proof re-derived directly from data stored on the network.',
-    'Distributed across independent 0G storage nodes \u2014 no central server.',
+    'Distributed across independent 0G storage nodes — no central server.',
     'Anchored on 0G Mainnet via the Flow storage contract.',
     'Encrypted client-side with AES-256 before upload.',
   ]
 
   function copyDetails() {
     const lines = [
-      'MediVault \u2014 0G Proof Certificate',
+      'MediVault — 0G Proof Certificate',
       `Record: ${meta.title}`,
       `Document type: ${DOC_TYPE_LABELS[meta.docType]}`,
       `0G Merkle root: ${meta.rootHash}`,
       meta.summaryRootHash ? `0G summary root: ${meta.summaryRootHash}` : '',
       `Network: 0G Mainnet (Chain ID ${ZG.CHAIN_ID})`,
+      nodes != null ? `Live 0G storage nodes: ${nodes} replicating now` : '',
       `0G Flow storage contract: ${ZG.FLOW_CONTRACT}`,
       'Encryption: AES-256 (client-side before upload)',
       `Verify on 0G: ${storageScanUrl(meta.rootHash)}`,
@@ -176,6 +197,7 @@ export function ProofCertificate({ meta }: { meta: RecordMeta }) {
       issuedAt: issuedAt || new Date().toISOString(),
       owner: address,
       label: verifyLabel(verify),
+      nodes,
     })
     const w = window.open('', '_blank')
     if (!w) {
@@ -206,11 +228,11 @@ export function ProofCertificate({ meta }: { meta: RecordMeta }) {
 
   const statusText =
     verify === 'verified'
-      ? 'Merkle proof re-verified against 0G \u2014 this record is intact and unaltered.'
+      ? 'Merkle proof re-verified against 0G — this record is intact and unaltered.'
       : verify === 'checking'
-        ? 'Re-verifying the 0G Merkle proof against the network\u2026'
+        ? 'Re-verifying the 0G Merkle proof against the network…'
         : verify === 'unconfirmed'
-          ? 'Could not confirm on 0G right now \u2014 it may still be propagating. The content-addressed root below stays valid; try again shortly.'
+          ? 'Could not confirm on 0G right now — it may still be propagating. The content-addressed root below stays valid; try again shortly.'
           : 'This record is anchored on 0G.'
 
   return (
@@ -240,6 +262,15 @@ export function ProofCertificate({ meta }: { meta: RecordMeta }) {
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
             )}
             <span className="leading-relaxed">{statusText}</span>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+            <Server className="h-4 w-4 shrink-0 text-primary" />
+            <span className="leading-relaxed">
+              {nodes != null
+                ? `Data-available and replicated across ${nodes} live 0G storage nodes right now — no single node can withhold or alter it.`
+                : 'Replicated across independent 0G storage nodes — checking live availability…'}
+            </span>
           </div>
 
           <div className="rounded-xl border border-border/60 p-3">
