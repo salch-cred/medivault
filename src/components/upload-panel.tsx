@@ -12,7 +12,7 @@ import { useVault } from '@/lib/store'
 import { detectKind, extractText } from '@/lib/doc/parse'
 import { normalizeExtraction } from '@/lib/ai/normalize'
 import { buildAuthHeader, createAuthedProvider } from '@/lib/client/auth'
-import { deriveRecordKey, newRecordSalt, saltToHex } from '@/lib/og/crypto'
+import { deriveRecordKey, newRecordSalt, saltToHex, contentHashHex } from '@/lib/og/crypto'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
 import { ZG } from '@/lib/og/config'
 import { cn } from '@/lib/utils'
@@ -21,9 +21,9 @@ type Stage = 'idle' | 'parsing' | 'analyzing' | 'encrypting' | 'done'
 
 const STAGE_LABEL: Record<Stage, string> = {
   idle: '',
-  parsing: 'Reading your document…',
-  analyzing: 'AI is explaining it (0G Compute)…',
-  encrypting: 'Encrypting your document…',
+  parsing: 'Reading your document\u2026',
+  analyzing: 'AI is explaining it (0G Compute)\u2026',
+  encrypting: 'Encrypting your document\u2026',
   done: 'Saved to your vault',
 }
 
@@ -66,7 +66,7 @@ function fallbackSummary(file: File, text: string, reason?: unknown): Extraction
 }
 
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
-  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, signer } = useVault()
+  const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, signer, records } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
   const [pct, setPct] = useState(0)
   const [detail, setDetail] = useState('')
@@ -92,6 +92,21 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         setStage('parsing')
         setPct(10)
         setDetail('')
+
+        // Content-address dedupe: hash the original bytes up-front and skip all
+        // extraction/AI/upload work if this exact document is already saved.
+        const originalBytes = new Uint8Array(await file.arrayBuffer())
+        const contentHash = contentHashHex(originalBytes)
+        const duplicate = records.find((r) => r.contentHash && r.contentHash === contentHash)
+        if (duplicate) {
+          toast.success('This document is already in your vault \u2014 skipped the duplicate.')
+          setStage('idle')
+          setPct(0)
+          setDetail('')
+          onUploaded?.(duplicate.id)
+          return
+        }
+
         const auth = await buildAuthHeader(autoWalletSigner, autoWalletAddress)
 
         let text = ''
@@ -161,12 +176,12 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           recordKeySalt: saltToHex(salt),
           fileName: file.name,
           mimeType: file.type || undefined,
+          contentHash,
           createdAt: new Date().toISOString(),
         }
 
         addRecord(meta, summary)
         try {
-          const originalBytes = new Uint8Array(await file.arrayBuffer())
           cacheOriginal(meta.id, originalBytes)
         } catch (cacheErr) {
           console.warn('Failed to cache original locally:', cacheErr)
@@ -175,8 +190,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         setStage('done')
         setPct(100)
-        toast.success('Saved to your vault! 🎉', {
-          description: 'Backing up to 0G storage in the background…',
+        toast.success('Saved to your vault! \ud83c\udf89', {
+          description: 'Backing up to 0G storage in the background\u2026',
         })
         onUploaded?.(meta.id)
         setTimeout(() => {
@@ -192,13 +207,13 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
             setUploadStatus(meta.id, 'stored')
             useVault.getState().syncRemoteIndex()
-            toast.success('Backed up to 0G ✓', {
-              description: fileResult.txHash ? `tx ${fileResult.txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
+            toast.success('Backed up to 0G \u2713', {
+              description: fileResult.txHash ? `tx ${fileResult.txHash.slice(0, 10)}\u2026` : 'Stored on 0G decentralized storage',
             })
           } catch (bgErr) {
             console.error('Background 0G backup failed; auto-retrying until it lands:', bgErr)
             setUploadStatus(meta.id, 'pending')
-            toast.message('0G backup is taking a moment — auto-retrying in the background…')
+            toast.message('0G backup is taking a moment \u2014 auto-retrying in the background\u2026')
             void autoBackup(meta)
           }
         })()
@@ -209,7 +224,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         toast.error(e instanceof Error ? e.message : 'Upload failed')
       }
     },
-    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, signer, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, onUploaded],
+    [connected, storage, index, key, autoWalletSigner, autoWalletAddress, address, signer, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, onUploaded, records],
   )
 
   return (
@@ -233,8 +248,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             e.preventDefault()
             setDragging(true)
           }}
-          onDragLeave={() => setDragging(false)
-          }
+          onDragLeave={() => setDragging(false)}
           onDrop={(e) => {
             e.preventDefault()
             setDragging(false)
@@ -283,7 +297,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             <p className="mt-1 text-xs text-primary/80">{detail}</p>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
-              TXT, MD, PDF, or an image (PNG/JPG — OCR). Encrypted before it leaves your device.
+              TXT, MD, PDF, or an image (PNG/JPG \u2014 OCR). Encrypted before it leaves your device.
             </p>
           )}
         </motion.div>

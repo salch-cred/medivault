@@ -39,6 +39,10 @@ export type RecordMeta = {
   // Absent on records uploaded before this was tracked (fall back to .txt).
   fileName?: string
   mimeType?: string
+  // Keccak-256 of the original (pre-encryption) file bytes, used to detect and
+  // skip duplicate uploads of the same document. Absent on records uploaded
+  // before content-addressing existed.
+  contentHash?: string
   createdAt: string
 }
 
