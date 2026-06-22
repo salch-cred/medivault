@@ -1,294 +1,211 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
-import { ArrowLeft, ArrowDown, Wallet, Zap, Loader2, Info, Globe, AlertTriangle } from 'lucide-react'
-import Link from 'next/link'
-import { ethers } from 'ethers'
 import { useWeb3ModalProvider, useWeb3ModalAccount } from '@web3modal/ethers/react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { ethers } from 'ethers'
+import { toast } from 'sonner'
+import { ArrowLeftRight, Globe, Send, Loader2, Copy, Check, AlertTriangle, ExternalLink } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useVault } from '@/lib/store'
-import { toast } from 'sonner'
-import { ConnectGate } from '@/components/connect-gate'
 import { ZG } from '@/lib/og/config'
 
+// LI.FI widget is client-only; load it without SSR to avoid hydration/build issues.
+const CrossChainWidget = dynamic(() => import('@/components/cross-chain-widget'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[550px] items-center justify-center">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  ),
+})
+
 export default function SwapPage() {
-  const { autoWalletAddress } = useVault()
-  const { address: mainWalletAddress, isConnected } = useWeb3ModalAccount()
   const { walletProvider } = useWeb3ModalProvider()
-  
+  const { address, isConnected } = useWeb3ModalAccount()
   const [amount, setAmount] = useState('')
-  const [isTransferring, setIsTransferring] = useState(false)
-  const [mainBalance, setMainBalance] = useState('0')
-  const [autoBalance, setAutoBalance] = useState('0')
+  const [toAddress, setToAddress] = useState('')
+  const [sending, setSending] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  const fetchBalances = async () => {
-    try {
-      const provider = new ethers.JsonRpcProvider(ZG.RPC_URL)
-      
-      if (mainWalletAddress) {
-        const mBal = await provider.getBalance(mainWalletAddress)
-        setMainBalance(ethers.formatEther(mBal))
-      }
-      
-      if (autoWalletAddress) {
-        const aBal = await provider.getBalance(autoWalletAddress)
-        setAutoBalance(ethers.formatEther(aBal))
-      }
-    } catch (e) {
-      console.error('Failed to fetch balances:', e)
-    }
-  }
-
-  useEffect(() => {
-    fetchBalances()
-    const interval = setInterval(fetchBalances, 10000)
-    return () => clearInterval(interval)
-  }, [mainWalletAddress, autoWalletAddress])
-
-  const handleTransfer = async () => {
-    if (!walletProvider || !mainWalletAddress || !autoWalletAddress) {
-      toast.error('Wallet not fully connected.')
+  async function handleInternalTransfer() {
+    if (!isConnected || !walletProvider) {
+      toast.error('Connect your wallet first')
       return
     }
-
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      toast.error('Please enter a valid amount')
+    if (!amount || Number(amount) <= 0) {
+      toast.error('Enter a valid amount')
       return
     }
-
-    setIsTransferring(true)
+    if (!toAddress || !ethers.isAddress(toAddress)) {
+      toast.error('Enter a valid destination address')
+      return
+    }
+    setSending(true)
     try {
       const provider = new ethers.BrowserProvider(walletProvider)
       const signer = await provider.getSigner()
-      
       const tx = await signer.sendTransaction({
-        to: autoWalletAddress,
-        value: ethers.parseEther(amount)
+        to: toAddress,
+        value: ethers.parseEther(amount),
       })
-      
-      toast.info('Transaction submitted to network', {
-        description: 'Waiting for confirmation...'
-      })
-      
+      toast.success('Transaction sent', { description: tx.hash })
       await tx.wait()
-      
-      toast.success('Transfer successful!', {
-        description: `Successfully sent ${amount} OG to your Auto-Wallet.`
-      })
+      toast.success('Transfer confirmed')
       setAmount('')
-      fetchBalances()
-    } catch (error: any) {
-      console.error(error)
-      toast.error('Transfer failed', {
-        description: error.message || 'The transaction was rejected or failed.'
-      })
+      setToAddress('')
+    } catch (err: any) {
+      toast.error('Transfer failed', { description: err?.shortMessage || err?.message || 'Unknown error' })
     } finally {
-      setIsTransferring(false)
+      setSending(false)
     }
   }
 
-  return (
-    <ConnectGate>
-      <div className="mx-auto max-w-lg space-y-4 pt-2 pb-12">
-        <Link href="/vault" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back to Dashboard
-        </Link>
+  async function copyAddress() {
+    if (!address) return
+    await navigator.clipboard.writeText(address)
+    setCopied(true)
+    toast.success('Address copied')
+    setTimeout(() => setCopied(false), 1500)
+  }
 
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Fund Auto-Wallet</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Transfer OG tokens internally or swap from other networks to pay for decentralized storage.
-            </p>
+  return (
+    <div className="mx-auto w-full max-w-lg px-4 py-6">
+      <motion.div
+        initial= opacity: 0, y: 8 
+        animate= opacity: 1, y: 0 
+        className="mb-6"
+      >
+        <h1 className="text-2xl font-bold tracking-tight">Swap &amp; Transfer</h1>
+        <p className="text-sm text-muted-foreground">Move funds internally on 0G or swap across chains.</p>
+      </motion.div>
+
+      <Tabs defaultValue="internal" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="internal" className="gap-2">
+            <Send className="h-4 w-4" /> Internal Transfer
+          </TabsTrigger>
+          <TabsTrigger value="crosschain" className="gap-2">
+            <Globe className="h-4 w-4" /> Cross-Chain Swap
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="internal" className="mt-4">
+          <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ArrowLeftRight className="h-4 w-4" /> Send OG on 0G Mainnet
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Transfer OG from your connected wallet to any 0G address.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Amount (OG)</Label>
+                <Input
+                  type="number"
+                  placeholder="0.0"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  min="0"
+                  step="0.0001"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Destination Address</Label>
+                <Input
+                  placeholder="0x..."
+                  value={toAddress}
+                  onChange={(e) => setToAddress(e.target.value)}
+                />
+              </div>
+              <Button
+                onClick={handleInternalTransfer}
+                disabled={sending}
+                className="w-full"
+              >
+                {sending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" /> Send Transfer
+                  </>
+                )}
+              </Button>
+              {address && (
+                <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Your wallet</span>
+                  <button
+                    onClick={copyAddress}
+                    className="flex items-center gap-1.5 font-mono text-foreground transition-colors hover:text-primary"
+                  >
+                    {address.slice(0, 6)}...{address.slice(-4)}
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="crosschain" className="mt-4 space-y-4">
+          <div className="flex gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wider">Heads up</p>
+              <p className="leading-relaxed">
+                Swap or bridge across 60+ chains using the open-source LI.FI widget. 0G Mainnet may
+                not be selectable as a destination yet &mdash; to bridge directly into 0G, use the
+                XSwap link below and search <strong>0G</strong> (with a zero, not the letter O).
+              </p>
+            </div>
           </div>
 
-          <Tabs defaultValue="internal" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 h-10">
-              <TabsTrigger value="internal" className="text-xs">
-                <Wallet className="w-3 h-3 mr-2" />
-                Internal Transfer
-              </TabsTrigger>
-              <TabsTrigger value="crosschain" className="text-xs">
-                <Globe className="w-3 h-3 mr-2" />
-                Cross-Chain Swap
-              </TabsTrigger>
-            </TabsList>
+          <Card className="overflow-hidden border-border/50 bg-background/60 shadow-xl backdrop-blur-xl">
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="text-sm">Cross-Chain Swap &amp; Bridge</CardTitle>
+              <CardDescription className="text-xs">
+                Powered by LI.FI &mdash; open-source liquidity aggregation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-2 sm:p-3">
+              <CrossChainWidget />
+            </CardContent>
+          </Card>
 
-            {/* INTERNAL TRANSFER TAB */}
-            <TabsContent value="internal" className="mt-4 space-y-4">
-              <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl">
-                <CardContent className="p-4 space-y-4">
-                  {/* Main Wallet (From) */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-muted-foreground">From</Label>
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Main Wallet</span>
-                    </div>
-                    <div className="rounded-xl border bg-muted/30 p-3 transition-colors hover:bg-muted/50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                            <Wallet className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="font-mono text-xs font-medium text-foreground">{mainWalletAddress ? `${mainWalletAddress.slice(0, 6)}...${mainWalletAddress.slice(-4)}` : 'Not connected'}</p>
-                            <p className="text-[11px] text-muted-foreground">Balance: {Number(mainBalance).toFixed(4)} OG</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+          {address && (
+            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">Auto-wallet (paste as recipient)</span>
+              <button
+                onClick={copyAddress}
+                className="flex items-center gap-1.5 font-mono text-foreground transition-colors hover:text-primary"
+              >
+                {address.slice(0, 6)}...{address.slice(-4)}
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </button>
+            </div>
+          )}
 
-                  {/* Arrow Indicator */}
-                  <div className="relative flex justify-center py-1">
-                    <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border/50"></div>
-                    <div className="relative flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm">
-                      <ArrowDown className="h-3 w-3" />
-                    </div>
-                  </div>
-
-                  {/* Auto Wallet (To) */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-muted-foreground">To</Label>
-                      <span className="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-semibold">Auto-Wallet</span>
-                    </div>
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 transition-colors hover:bg-emerald-500/10">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
-                            <Zap className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                              {autoWalletAddress ? `${autoWalletAddress.slice(0, 6)}...${autoWalletAddress.slice(-4)}` : 'Generating...'}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">Balance: {Number(autoBalance).toFixed(4)} OG</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Amount Input */}
-                  <div className="space-y-2 pt-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">Amount</Label>
-                      <button 
-                        onClick={() => setAmount(Number(mainBalance) > 0.01 ? (Number(mainBalance) - 0.01).toString() : '0')}
-                        className="text-[10px] uppercase tracking-wider font-semibold text-primary hover:underline"
-                      >
-                        Max (save gas)
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        className="h-10 text-sm font-mono placeholder:text-muted-foreground/50 pr-12 bg-background/50 border-border/50 focus:border-primary/50 transition-colors"
-                      />
-                      <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                        <span className="text-xs font-semibold text-muted-foreground">OG</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Submit Button */}
-                  <Button 
-                    onClick={handleTransfer} 
-                    disabled={isTransferring || !amount || Number(amount) <= 0}
-                    className="w-full h-10 text-sm font-medium shadow-sm"
-                  >
-                    {isTransferring ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      'Transfer Funds'
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <div className="rounded-xl border border-primary/10 bg-primary/5 p-3 flex gap-2 text-xs text-muted-foreground">
-                <Info className="h-4 w-4 shrink-0 text-primary mt-0.5" />
-                <p className="leading-relaxed">
-                  Your Auto-Wallet uses a small amount of OG tokens (gas) to instantly encrypt and store your files on the 0G Network securely. You own both wallets.
-                </p>
-              </div>
-            </TabsContent>
-
-            {/* CROSS CHAIN SWAP TAB */}
-            <TabsContent value="crosschain" className="mt-4 space-y-4">
-              {/* Important Instruction Notice */}
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex gap-2 text-xs text-amber-700 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-semibold text-[11px] uppercase tracking-wider">Search instruction</p>
-                  <p className="leading-relaxed">When searching for the network in XSwap, type <strong>0G</strong> (with the number ZERO), not the letter O.</p>
-                </div>
-              </div>
-
-              <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl overflow-hidden">
-                <CardHeader className="p-4 pb-0">
-                  <CardTitle className="text-sm">Cross-Chain Swap (XSwap)</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0 sm:p-2 bg-muted/10 h-[550px] relative">
-                  {/* XSwap Iframe Widget */}
-                  <iframe 
-                    id="iframe-widget" 
-                    src={`https://xswap.link/bridge`} 
-                    style={{ height: '100%', width: '100%', border: 'none', borderRadius: '8px' }}
-                    allow="clipboard-read; clipboard-write"
-                  ></iframe>
-                </CardContent>
-              </Card>
-              
-              {/* Copy Auto-Wallet Shortcut */}
-              <div className="rounded-xl border bg-muted/30 p-3 flex flex-col gap-2 text-xs text-muted-foreground transition-colors hover:bg-muted/50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Info className="h-4 w-4 text-primary" />
-                    <p className="font-medium">Destination (Auto-Wallet)</p>
-                  </div>
-                  <Button 
-                    variant="secondary" 
-                    size="sm" 
-                    className="h-6 text-[10px] px-2" 
-                    onClick={() => {
-                      if(autoWalletAddress) {
-                        navigator.clipboard.writeText(autoWalletAddress)
-                        toast.success('Auto-Wallet Address copied!')
-                      }
-                    }}
-                  >
-                    Copy
-                  </Button>
-                </div>
-                <div className="bg-background/80 p-2 rounded-md border border-border/50">
-                  <span className="font-mono text-[11px] text-foreground">{autoWalletAddress || 'Generating...'}</span>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-
-        </motion.div>
-      </div>
-    </ConnectGate>
+          <a
+            href="https://xswap.link/bridge"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Bridge directly into 0G via XSwap
+          </a>
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }
 
-function Label({ className, children }: { className?: string, children: React.ReactNode }) {
-  return <label className={className}>{children}</label>
+function Label({ children }: { children: React.ReactNode }) {
+  return <label className="text-xs font-medium text-muted-foreground">{children}</label>
 }
