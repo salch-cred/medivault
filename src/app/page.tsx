@@ -3,15 +3,17 @@
 import Link from 'next/link'
 import { motion, useReducedMotion, type Transition } from 'framer-motion'
 import {
-  ShieldPlus,
   Lock,
   Share2,
-  FileSearch,
   ArrowRight,
   ArrowUpRight,
   Cpu,
-  Database,
   Sparkles,
+  BadgeCheck,
+  ShieldCheck,
+  Anchor,
+  Layers,
+  History,
   Twitter,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -106,16 +108,23 @@ const FEATURES: Feature[] = [
     span: 'md:col-span-2',
   },
   {
-    icon: FileSearch,
-    title: 'Tamper-proof',
-    body: 'Every record is anchored to 0G with an immutable Merkle root. Verify integrity anytime.',
-    tone: 'from-blue-500/10 to-transparent',
-  },
-  {
     icon: Sparkles,
     title: 'AI plain-language summaries',
-    body: 'Dense lab panels and reports are decoded into clear, plain-language summaries you can actually understand — generated on 0G, never handed to a centralized cloud.',
+    body: 'Dense lab panels and reports are decoded into clear, plain-language summaries — generated on 0G compute, never handed to a centralized cloud.',
     tone: 'from-amber-500/10 to-transparent',
+  },
+  {
+    icon: BadgeCheck,
+    title: 'Selective-disclosure proofs',
+    body: 'Prove a single fact — your blood type, a vaccination, a normal result — with a cryptographically signed disclosure, without revealing the rest of your record.',
+    tone: 'from-blue-500/10 to-transparent',
+    span: 'md:col-span-2',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Tamper-proof certificates',
+    body: 'Generate a shareable certificate proving a record exists, is unaltered, and is anchored to 0G — verifiable by anyone, no account needed.',
+    tone: 'from-emerald-500/10 to-transparent',
   },
   {
     icon: Share2,
@@ -125,11 +134,22 @@ const FEATURES: Feature[] = [
     span: 'md:col-span-2',
   },
   {
-    icon: Database,
-    title: 'Stored for life',
-    body: 'Records are backed up to 0G decentralized storage and auto-retry until they are safely saved — so your history survives logouts, new devices, and time itself.',
+    icon: Anchor,
+    title: 'On-chain anchor index',
+    body: 'Anchor your record index to the 0G chain, so your entire vault can be rebuilt trustlessly from on-chain state — no server required.',
     tone: 'from-cyan-500/10 to-transparent',
-    span: 'md:col-span-2',
+  },
+  {
+    icon: Layers,
+    title: 'Content-address dedupe',
+    body: 'Re-upload the same document and MediVault recognizes it by content hash and merges it automatically — no duplicates, no wasted storage.',
+    tone: 'from-indigo-500/10 to-transparent',
+  },
+  {
+    icon: History,
+    title: 'Consent ledger',
+    body: 'Every share is written to an immutable consent ledger, so you always have a clear audit trail of who can see what.',
+    tone: 'from-rose-500/10 to-transparent',
   },
   {
     icon: Cpu,
@@ -184,9 +204,7 @@ export default function LandingPage() {
         <div className="border-b border-border/40 bg-background/70 backdrop-blur-xl">
           <div className="container flex h-14 items-center justify-between md:h-16">
             <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-sm">
-                <ShieldPlus className="h-4 w-4" />
-              </span>
+              <img src="/logo.svg" alt="MediVault" className="h-8 w-8 rounded-xl shadow-sm" />
               <span className="text-lg">MediVault</span>
             </Link>
             <div className="flex items-center gap-3">
@@ -235,8 +253,9 @@ export default function LandingPage() {
               variants={staggerItem}
               className="mx-auto mt-7 max-w-2xl text-pretty text-lg text-muted-foreground md:text-xl"
             >
-              Store, decode, and share your medical records. Secured by zero-knowledge
-              architecture on the 0G Network — readable by absolutely no one but you.
+              Store and decode your medical records, prove what you need without revealing
+              what you do not, and share encrypted records with the people you choose — all
+              on the 0G Network, readable by no one but you.
             </motion.p>
 
             <motion.div
@@ -294,7 +313,7 @@ export default function LandingPage() {
               Zero-compromise by design.
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              Built to ensure your data outlives any single company.
+              Encrypted, decentralized, and provable — built so your data outlives any single company.
             </p>
           </motion.div>
 
@@ -349,7 +368,7 @@ export default function LandingPage() {
       <footer className="container px-safe pb-10 pt-6 md:pb-12">
         <div className="flex flex-col items-center justify-between gap-4 border-t border-border/20 pt-8 text-sm text-muted-foreground md:flex-row">
           <div className="flex items-center gap-2 font-medium">
-            <ShieldPlus className="h-4 w-4" /> MediVault
+            <img src="/logo.svg" alt="MediVault" className="h-4 w-4 rounded" /> MediVault
           </div>
           <p>© {new Date().getFullYear()} — Built for 0G Zero Cup</p>
           <div className="flex items-center gap-3">
