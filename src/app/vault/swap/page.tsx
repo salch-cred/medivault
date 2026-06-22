@@ -13,6 +13,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ZG } from '@/lib/og/config'
 
+// Motion presets declared as objects to avoid inline double-brace JSX.
+const MOTION_INITIAL = { opacity: 0, y: 8 }
+const MOTION_ANIMATE = { opacity: 1, y: 0 }
+
 // LI.FI widget is client-only; load it without SSR to avoid hydration/build issues.
 const CrossChainWidget = dynamic(() => import('@/components/cross-chain-widget'), {
   ssr: false,
@@ -75,8 +79,8 @@ export default function SwapPage() {
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-6">
       <motion.div
-        initial= opacity: 0, y: 8 
-        animate= opacity: 1, y: 0 
+        initial={MOTION_INITIAL}
+        animate={MOTION_ANIMATE}
         className="mb-6"
       >
         <h1 className="text-2xl font-bold tracking-tight">Swap &amp; Transfer</h1>
