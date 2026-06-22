@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
@@ -55,7 +55,7 @@ const PRINT_HEADER_STYLE = { pageBreakAfter: 'avoid' } as const
 type DocKind = 'text' | 'image' | 'pdf' | 'binary'
 
 function RecordView({ meta }: { meta: RecordMeta }) {
-  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal, uploadStatus, autoBackup } = useVault()
+  const { storage, summaries, loadSummary, getRecordKey, getCachedOriginal, cacheOriginal, uploadStatus, autoBackup } = useVault()
   const [summary, setSummary] = useState<ExtractionResult | undefined>(summaries[meta.id])
   const [loadingSummary, setLoadingSummary] = useState(!summaries[meta.id])
   const [summaryFailed, setSummaryFailed] = useState(false)
@@ -91,6 +91,28 @@ function RecordView({ meta }: { meta: RecordMeta }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backupState, meta.id])
+
+  // Auto-verify integrity in the background as soon as the record opens. This
+  // is intentionally silent: we only surface a positive result (the green
+  // "verified" banner below). Transient propagation/network failures are
+  // ignored so we never raise a false tamper alarm — the manual "Verify
+  // integrity" button still gives full, explicit feedback on demand.
+  const autoVerifiedRef = useRef(false)
+  useEffect(() => {
+    if (!storage || autoVerifiedRef.current) return
+    autoVerifiedRef.current = true
+    let cancelled = false
+    void storage
+      .verifyIntegrity(meta.rootHash)
+      .then((ok) => {
+        if (ok && !cancelled) setVerified(true)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta.id, storage])
 
   // Release any object URL we created for previews when leaving the page.
   useEffect(() => {
@@ -171,8 +193,10 @@ function RecordView({ meta }: { meta: RecordMeta }) {
   }
 
   // Turn decrypted bytes into a preview: decode text inline, or build a typed
-  // object URL so PDFs/images open and download natively.
+  // object URL so PDFs/images open and download natively. We also write the
+  // bytes back into the in-memory cache so re-opening this record is instant.
   function presentBytes(bytes: Uint8Array) {
+    cacheOriginal(meta.id, bytes)
     setFileSize(bytes.byteLength)
     const kind = fileKind(meta.mimeType)
     if (kind === 'text') {
@@ -242,6 +266,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
       setDocStatus(null)
     }
     if (!bytes) return
+    cacheOriginal(meta.id, bytes)
     setFileSize(bytes.byteLength)
     try {
       const blob = new Blob([bytes as BlobPart], meta.mimeType ? { type: meta.mimeType } : undefined)
