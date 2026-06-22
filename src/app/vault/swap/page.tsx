@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import { useWeb3ModalProvider, useWeb3ModalAccount } from '@web3modal/ethers/react'
 import { ethers } from 'ethers'
@@ -11,21 +10,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ZG } from '@/lib/og/config'
 
 // Motion presets declared as objects to avoid inline double-brace JSX.
 const MOTION_INITIAL = { opacity: 0, y: 8 }
 const MOTION_ANIMATE = { opacity: 1, y: 0 }
 
-// LI.FI widget is client-only; load it without SSR to avoid hydration/build issues.
-const CrossChainWidget = dynamic(() => import('@/components/cross-chain-widget'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-[550px] items-center justify-center">
-      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-    </div>
-  ),
-})
+// RocketX hosted swap/bridge app: non-custodial aggregator across 200+ chains, supports 0G / OG Network.
+const ROCKETX_URL = 'https://app.rocketx.exchange/'
+// XSwap is 0G's official bridge (Chainlink CCIP, Ethereum <-> 0G USDC).
+const XSWAP_0G_URL = 'https://xswap.link/bridge?toChain=16661'
 
 export default function SwapPage() {
   const { walletProvider } = useWeb3ModalProvider()
@@ -164,45 +157,54 @@ export default function SwapPage() {
             <div className="space-y-1">
               <p className="text-[11px] font-semibold uppercase tracking-wider">Heads up</p>
               <p className="leading-relaxed">
-                Swap or bridge across 60+ chains using the open-source LI.FI widget. 0G Mainnet may
-                not be selectable as a destination yet &mdash; to bridge directly into 0G, use the
-                XSwap link below and search <strong>0G</strong> (with a zero, not the letter O).
+                RocketX is a non-custodial cross-chain aggregator covering 200+ chains. 0G is
+                supported &mdash; on RocketX, choose <strong>OG Network</strong> as the destination
+                (type 0G with a zero, not the letter O). For a direct USDC bridge into 0G, use the
+                official XSwap link below.
               </p>
             </div>
           </div>
 
-          <Card className="overflow-hidden border-border/50 bg-background/60 shadow-xl backdrop-blur-xl">
-            <CardHeader className="p-4 pb-0">
-              <CardTitle className="text-sm">Cross-Chain Swap &amp; Bridge</CardTitle>
+          <Card className="border-border/50 bg-background/60 shadow-xl backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Globe className="h-4 w-4" /> Cross-Chain Swap &amp; Bridge
+              </CardTitle>
               <CardDescription className="text-xs">
-                Powered by LI.FI &mdash; open-source liquidity aggregation.
+                Powered by RocketX &mdash; non-custodial routing across 200+ blockchains.
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-2 sm:p-3">
-              <CrossChainWidget />
+            <CardContent className="space-y-3">
+              <a
+                href={ROCKETX_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                <ArrowLeftRight className="h-4 w-4" /> Open RocketX Swap &amp; Bridge
+              </a>
+              {address && (
+                <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Auto-wallet (paste as recipient)</span>
+                  <button
+                    onClick={copyAddress}
+                    className="flex items-center gap-1.5 font-mono text-foreground transition-colors hover:text-primary"
+                  >
+                    {address.slice(0, 6)}...{address.slice(-4)}
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {address && (
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs">
-              <span className="text-muted-foreground">Auto-wallet (paste as recipient)</span>
-              <button
-                onClick={copyAddress}
-                className="flex items-center gap-1.5 font-mono text-foreground transition-colors hover:text-primary"
-              >
-                {address.slice(0, 6)}...{address.slice(-4)}
-                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </button>
-            </div>
-          )}
-
           <a
-            href="https://xswap.link/bridge"
+            href={XSWAP_0G_URL}
             target="_blank"
             rel="noreferrer"
             className="flex items-center justify-center gap-1.5 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
           >
-            <ExternalLink className="h-3.5 w-3.5" /> Bridge directly into 0G via XSwap
+            <ExternalLink className="h-3.5 w-3.5" /> Bridge USDC directly into 0G via XSwap (official)
           </a>
         </TabsContent>
       </Tabs>
