@@ -17,10 +17,15 @@ const instrumentSerif = Instrument_Serif({
   variable: '--font-serif',
 })
 
-const metadata: Metadata = {
+export const metadata: Metadata = {
   title: 'MediVault — your private, AI-powered health vault',
   description:
     'Upload medical records, get plain-language AI explanations, and store everything encrypted on 0G — owned by you, readable by no one else.',
+  icons: {
+    icon: '/logo.svg',
+    shortcut: '/logo.svg',
+    apple: '/logo.svg',
+  },
 }
 
 // viewport-fit=cover lets content extend under the notch so we can pad with

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ShieldPlus, FolderOpen, Clock, Activity, ArrowRightLeft, HeartPulse, MessageSquare, Database, Zap, Network, History, BadgeCheck, Anchor } from 'lucide-react'
+import { FolderOpen, Clock, Activity, ArrowRightLeft, HeartPulse, MessageSquare, Database, Zap, Network, History, BadgeCheck, Anchor } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WalletConnect } from '@/components/wallet-connect'
 
@@ -27,9 +27,7 @@ export function DesktopSidebar() {
   return (
     <aside className="hidden md:flex flex-col w-64 border-r border-border/40 bg-background/90 backdrop-blur-xl h-screen sticky top-0 px-4 py-6">
       <Link href="/" className="flex items-center gap-2 font-bold group mb-10 px-2">
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md transition-transform group-active:scale-95">
-          <ShieldPlus className="h-5 w-5" />
-        </span>
+        <img src="/logo.svg" alt="MediVault" className="h-9 w-9 rounded-xl shadow-md transition-transform group-active:scale-95" />
         <span className="inline-block text-xl tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
           MediVault
         </span>
