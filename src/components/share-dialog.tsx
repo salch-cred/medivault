@@ -191,6 +191,26 @@ export function ShareDialog({
       }
 
       setShareHash(rootHash)
+
+      // Record an immutable, hash-chained consent event in the owner's
+      // 0G-backed access ledger. Fire-and-forget: it must never block or fail
+      // the share itself. Only meaningful when sharing to a wallet address.
+      if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
+        void fetch('/api/og/ledger', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-medivault-auth': auth,
+          },
+          body: JSON.stringify({
+            type: 'grant',
+            recipientAddress: targetDoc,
+            recordTitle: meta.title,
+            recordRootHash: meta.rootHash,
+          }),
+        }).catch(() => {})
+      }
+
       toast.success(
         durable
           ? 'Encrypted securely and shared directly to the recipient dashboard!'
@@ -267,7 +287,7 @@ export function ShareDialog({
         ) : (
           <Button onClick={share} disabled={sharing}>
             {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-            Encrypt & share
+            Encrypt &amp; share
           </Button>
         )}
       </DialogContent>
