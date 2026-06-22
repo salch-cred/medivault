@@ -109,3 +109,15 @@ export const EMPTY_EXTRACTION: ExtractionResult = {
   confidence: 0,
   sourceQuotes: [],
 }
+
+export type ReceivedRecord = {
+  id: string
+  rootHash: string
+  senderName: string
+  senderAddress: string
+  docType: DocType
+  title: string
+  date: string | null
+  sharedAt: string
+}
+

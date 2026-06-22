@@ -17,7 +17,7 @@ import { loadRemoteIndex, saveRemoteIndex, mergeRecords } from '@/lib/og/remote-
 import { buildAuthHeader, getCachedAuthHeader } from '@/lib/client/auth'
 import { ZG } from '@/lib/og/config'
 import { EMPTY_EXTRACTION } from '@/lib/og/types'
-import type { ExtractionResult, RecordMeta, VaultRecord } from '@/lib/og/types'
+import type { ExtractionResult, RecordMeta, VaultRecord, ReceivedRecord } from '@/lib/og/types'
 
 type Status = 'disconnected' | 'connecting' | 'connected'
 
@@ -57,7 +57,7 @@ type VaultState = {
   originals: Record<string, Uint8Array>
   uploadStatus: Record<string, BackupStatus>
   failedSummaries: Record<string, boolean>
-  receivedRecords: any[]
+  receivedRecords: ReceivedRecord[]
   loadingRecords: boolean
   language: string
   eli5: boolean
@@ -276,9 +276,15 @@ export const useVault = create<VaultState>((set, get) => ({
     }
     get().setUploadStatus(meta.id, 'pending')
     try {
-      await storage.uploadEncrypted(original, recKey)
+      // Parallel upload: document + summary are independent (different root
+      // hashes) — concurrent uploads halve the total 0G backup time.
       const summary = summaries[meta.id]
-      if (summary) await storage.uploadEncrypted(new TextEncoder().encode(JSON.stringify(summary)), recKey)
+      await Promise.all([
+        storage.uploadEncrypted(original, recKey),
+        summary
+          ? storage.uploadEncrypted(new TextEncoder().encode(JSON.stringify(summary)), recKey)
+          : Promise.resolve(),
+      ])
       if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
       get().setUploadStatus(meta.id, 'stored')
       get().syncRemoteIndex()
@@ -357,8 +363,8 @@ export const useVault = create<VaultState>((set, get) => ({
 
       void (async () => {
         try {
-          await filePrep.finalize()
-          await summaryPrep.finalize()
+          // Parallel finalize: document + summary are independent uploads.
+          await Promise.all([filePrep.finalize(), summaryPrep.finalize()])
           if (index) await index.put(meta).catch((e) => console.warn('KV index write failed:', e))
           get().setUploadStatus(meta.id, 'stored')
           get().syncRemoteIndex()

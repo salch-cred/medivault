@@ -202,8 +202,14 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         void (async () => {
           try {
-            const fileResult = await filePrep.finalize()
-            await summaryPrep.finalize()
+            // Parallel finalize: document + summary are independent uploads
+            // (different root hashes) — running them concurrently halves the
+            // total 0G backup time. The retry logic in uploadWithRetry handles
+            // any nonce conflicts from concurrent on-chain transactions.
+            const [fileResult] = await Promise.all([
+              filePrep.finalize(),
+              summaryPrep.finalize(),
+            ])
             await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
             setUploadStatus(meta.id, 'stored')
             useVault.getState().syncRemoteIndex()
