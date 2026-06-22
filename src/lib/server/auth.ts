@@ -9,14 +9,22 @@ import { NextRequest, NextResponse } from 'next/server'
  *   `${address}|${timestamp}|${nonce}|${signature}`
  * where `signature = personal_sign("${address}|${timestamp}|${nonce}")`.
  *
- * Security improvements:
- * - Nonce-based replay prevention (nonce stored in memory, single-use).
- * - Reduced time skew window from 5 min to 90 seconds.
- * - Generic error messages to avoid information leakage.
+ * Security model:
+ * - The signed message binds the caller's address, a timestamp, and a random
+ *   nonce (entropy so two headers are never identical).
+ * - Replay is bounded by a tight 90-second timestamp window (MAX_SKEW_MS).
+ * - Generic error messages avoid information leakage.
  * - Backward-compatible with legacy 3-part headers (address|timestamp|signature).
+ *
+ * NOTE: We intentionally do NOT enforce single-use nonces. The browser caches a
+ * single signed header for ~70s (under MAX_SKEW_MS) and legitimately reuses it
+ * across the multiple requests of one upload (e.g. /api/parse then
+ * /api/ai/extract, plus 0G storage-node calls). Rejecting nonce reuse broke
+ * those flows with false "Authentication failed." errors, so the short
+ * timestamp window is the replay bound instead.
  */
 
-const MAX_SKEW_MS = 90 * 1000 // 90 seconds (down from 5 minutes)
+const MAX_SKEW_MS = 90 * 1000 // 90 seconds
 const MAX_TEXT = 60_000 // chars of document text we'll process
 const MAX_RECORDS = 50 // records passed into chat context
 const MAX_QUESTION = 4_000 // chat question length
@@ -25,19 +33,6 @@ const MAX_QUESTION = 4_000 // chat question length
 // Vercel serverless instance; for multi-instance you'd use Redis or Upstash).
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
-
-// Nonce store: single-use nonces to prevent auth replay attacks.
-// Each nonce is consumed on first use; entries expire after NONCE_TTL_MS.
-const usedNonces = new Map<string, number>()
-const NONCE_TTL_MS = 5 * 60 * 1000 // nonces expire after 5 minutes
-
-// Periodically clean up expired nonces to prevent unbounded memory growth.
-function cleanupNonces() {
-  const now = Date.now()
-  for (const [nonce, ts] of usedNonces) {
-    if (now - ts > NONCE_TTL_MS) usedNonces.delete(nonce)
-  }
-}
 
 export function checkRateLimit(
   address: string,
@@ -90,16 +85,6 @@ export function verifyAuth(req: NextRequest | Request): AuthResult {
   if (!Number.isFinite(ts) || ts <= 0) return { ok: false, response: error(401, 'Authentication failed.') }
   if (Math.abs(Date.now() - ts) > MAX_SKEW_MS) {
     return { ok: false, response: error(401, 'Authentication failed.') }
-  }
-
-  // Nonce replay prevention: consume the nonce on first use.
-  if (nonce) {
-    cleanupNonces()
-    const nonceKey = `${address.toLowerCase()}:${nonce}`
-    if (usedNonces.has(nonceKey)) {
-      return { ok: false, response: error(401, 'Authentication failed.') }
-    }
-    usedNonces.set(nonceKey, Date.now())
   }
 
   try {

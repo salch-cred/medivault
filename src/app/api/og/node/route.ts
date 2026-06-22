@@ -34,12 +34,6 @@ const STRIPPED_RESPONSE_HEADERS = [
 const MAX_PROXY_BYTES = 20 * 1024 * 1024
 const MAX_REDIRECTS = 3
 
-// Read-only JSON-RPC methods that are safe to proxy without auth.
-// zgs_getStatus is used by our client-side node-ranking code (proxy.ts)
-// to check storage node sync height — these calls can't easily inject
-// auth headers and the method is purely informational.
-const UNAUTHED_READ_METHODS = new Set(['zgs_getStatus', 'zgs_getFileInfo'])
-
 function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
     const p = ip.split('.').map(Number)
@@ -94,14 +88,31 @@ async function readLimitedBody(req: Request): Promise<ArrayBuffer | undefined> {
   return req.arrayBuffer()
 }
 
-/** Check if a POST body contains only read-only methods that don't need auth. */
-function isReadOnlyBody(body: ArrayBuffer | undefined): boolean {
+/**
+ * The 0G storage SDK makes its own JSON-RPC calls to storage nodes (status,
+ * file info, segment upload, segment download, proofs, etc.) through this
+ * proxy. Those calls originate inside the SDK and cannot carry our
+ * `x-medivault-auth` header, so requiring app auth here previously blocked
+ * segment uploads/downloads -- the file would submit on-chain but never finish
+ * syncing, and retries then re-submitted already-registered data, surfacing as
+ * a Flow `require(false)` revert.
+ *
+ * All 0G storage-node methods are namespaced `zgs_*`. We allow any body whose
+ * methods are all `zgs_*` through without app auth: the target is a public 0G
+ * storage node (it does not consume our auth), and SSRF protection plus the
+ * public-host check in assertSafeTarget still apply. Any non-`zgs_*` body still
+ * requires a valid signed header.
+ */
+function isOgStorageNodeBody(body: ArrayBuffer | undefined): boolean {
   if (!body) return false
   try {
     const parsed = JSON.parse(new TextDecoder().decode(body))
     const reqs = Array.isArray(parsed) ? parsed : [parsed]
-    return reqs.every(
-      (r: any) => typeof r?.method === 'string' && UNAUTHED_READ_METHODS.has(r.method),
+    return (
+      reqs.length > 0 &&
+      reqs.every(
+        (r: any) => typeof r?.method === 'string' && r.method.startsWith('zgs_'),
+      )
     )
   } catch {
     return false
@@ -141,10 +152,10 @@ async function handleProxy(req: Request) {
   try {
     const body = await readLimitedBody(req)
 
-    // Allow read-only storage node queries (zgs_getStatus, zgs_getFileInfo)
-    // without auth — these are used by client-side node ranking and the 0G SDK.
-    // All other requests require authentication.
-    if (!isReadOnlyBody(body)) {
+    // 0G storage-node JSON-RPC (all `zgs_*` methods) is allowed without app
+    // auth -- these calls come from the 0G SDK itself and target public storage
+    // nodes. Everything else must present a valid signed header.
+    if (!isOgStorageNodeBody(body)) {
       const auth = verifyAuth(req)
       if (!auth.ok) return auth.response
 
