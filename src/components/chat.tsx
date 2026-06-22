@@ -11,6 +11,7 @@ import { buildAuthHeader } from '@/lib/client/auth'
 import { cn } from '@/lib/utils'
 import { AIChatShareAction } from '@/components/ai-share-action'
 import { AIChatFundAction } from '@/components/ai-fund-action'
+import { ComputeBadge } from '@/components/compute-badge'
 
 type Message = { 
   role: 'user' | 'assistant'
@@ -121,6 +122,7 @@ export function Chat() {
               <p className="max-w-md text-base leading-relaxed">
                 I can summarize your medical records, explain lab results, or answer questions based on the documents in your decentralized vault.
               </p>
+              <ComputeBadge />
             </div>
           ) : (
             messages.map((m, i) => (
@@ -203,9 +205,12 @@ export function Chat() {
             </Button>
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mt-1">
-            <ShieldAlert className="h-3 w-3" />
-            <span>AI can make mistakes. Always consult your doctor for medical advice.</span>
+          <div className="flex flex-col items-center gap-1.5 mt-1">
+            <ComputeBadge />
+            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldAlert className="h-3 w-3" />
+              <span>AI can make mistakes. Always consult your doctor for medical advice.</span>
+            </div>
           </div>
         </div>
       </div>
