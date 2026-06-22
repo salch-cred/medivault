@@ -28,7 +28,7 @@ export function SiteHeader() {
           <Link href="/" className="flex items-center gap-2 font-bold group md:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/logo.svg"
+              src="/logo.png"
               alt="MediVault logo"
               className="h-8 w-8 rounded-xl shadow-md transition-transform group-active:scale-95 md:h-9 md:w-9"
             />

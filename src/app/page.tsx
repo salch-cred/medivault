@@ -204,7 +204,7 @@ export default function LandingPage() {
         <div className="border-b border-border/40 bg-background/70 backdrop-blur-xl">
           <div className="container flex h-14 items-center justify-between md:h-16">
             <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-              <img src="/logo.svg" alt="MediVault" className="h-8 w-8 rounded-xl shadow-sm" />
+              <img src="/logo.png" alt="MediVault" className="h-8 w-8 rounded-xl shadow-sm" />
               <span className="text-lg">MediVault</span>
             </Link>
             <div className="flex items-center gap-3">
@@ -241,7 +241,7 @@ export default function LandingPage() {
               className="mb-8 flex items-center justify-center"
             >
               <img
-                src="/logo.svg"
+                src="/logo.png"
                 alt="MediVault Logo"
                 className="h-24 w-24 rounded-[2rem] shadow-2xl border-4 border-border/5 bg-[#FBEFA8] p-1 transition-all hover:scale-105 duration-300 md:h-28 md:w-28"
               />
@@ -380,7 +380,7 @@ export default function LandingPage() {
       <footer className="container px-safe pb-10 pt-6 md:pb-12">
         <div className="flex flex-col items-center justify-between gap-4 border-t border-border/20 pt-8 text-sm text-muted-foreground md:flex-row">
           <div className="flex items-center gap-2 font-medium">
-            <img src="/logo.svg" alt="MediVault" className="h-4 w-4 rounded" /> MediVault
+            <img src="/logo.png" alt="MediVault" className="h-4 w-4 rounded" /> MediVault
           </div>
           <p>© {new Date().getFullYear()} — Built for 0G Zero Cup</p>
           <div className="flex items-center gap-3">

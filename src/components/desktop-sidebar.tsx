@@ -27,7 +27,7 @@ export function DesktopSidebar() {
   return (
     <aside className="hidden md:flex flex-col w-64 border-r border-border/40 bg-background/90 backdrop-blur-xl h-screen sticky top-0 px-4 py-6">
       <Link href="/" className="flex items-center gap-2 font-bold group mb-10 px-2">
-        <img src="/logo.svg" alt="MediVault" className="h-9 w-9 rounded-xl shadow-md transition-transform group-active:scale-95" />
+        <img src="/logo.png" alt="MediVault" className="h-9 w-9 rounded-xl shadow-md transition-transform group-active:scale-95" />
         <span className="inline-block text-xl tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
           MediVault
         </span>
