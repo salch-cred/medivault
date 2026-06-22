@@ -43,6 +43,7 @@ import { useVault } from '@/lib/store'
 import { DOC_TYPE_LABELS, type ExtractionResult, type RecordMeta } from '@/lib/og/types'
 import { formatDate, formatDateTime, formatTimeAgoExact, formatBytes, shortHash, fileKind, downloadFileName } from '@/lib/utils'
 import { storageScanUrl } from '@/lib/og/config'
+import { ProofCertificate } from '@/components/proof-certificate'
 
 const FADE_UP_INITIAL = { opacity: 0, y: 12 }
 const FADE_IN_INITIAL = { opacity: 0 }
@@ -351,6 +352,7 @@ function RecordView({ meta }: { meta: RecordMeta }) {
               {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
               Verify integrity
             </Button>
+            <ProofCertificate meta={meta} />
             <ShareDialog meta={meta} summary={summary} />
           </div>
         </motion.div>
