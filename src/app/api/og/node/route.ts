@@ -89,19 +89,19 @@ async function readLimitedBody(req: Request): Promise<ArrayBuffer | undefined> {
 }
 
 /**
- * The 0G storage SDK makes its own JSON-RPC calls to storage nodes (status,
- * file info, segment upload, segment download, proofs, etc.) through this
- * proxy. Those calls originate inside the SDK and cannot carry our
- * `x-medivault-auth` header, so requiring app auth here previously blocked
- * segment uploads/downloads -- the file would submit on-chain but never finish
- * syncing, and retries then re-submitted already-registered data, surfacing as
- * a Flow `require(false)` revert.
+ * The 0G storage SDK makes its own calls to storage nodes (status, file info,
+ * segment upload/download, Merkle proofs, etc.) through this proxy. Those calls
+ * originate inside the SDK and cannot carry our `x-medivault-auth` header, so
+ * requiring app auth on them previously broke uploads, downloads, and integrity
+ * checks (the file would submit on-chain but never finish syncing, and retries
+ * re-submitted already-registered data -> Flow `require(false)`).
  *
- * All 0G storage-node methods are namespaced `zgs_*`. We allow any body whose
- * methods are all `zgs_*` through without app auth: the target is a public 0G
- * storage node (it does not consume our auth), and SSRF protection plus the
- * public-host check in assertSafeTarget still apply. Any non-`zgs_*` body still
- * requires a valid signed header.
+ * We therefore let all 0G storage-node traffic through without app auth:
+ *   - GET requests are inherently read-only (downloads / proof fetches).
+ *   - POST bodies whose JSON-RPC methods are all `zgs_*` are 0G node calls.
+ * The target is always a public 0G storage node (it does not consume our auth),
+ * and SSRF protection plus the public-host check in assertSafeTarget still
+ * apply. Any non-`zgs_*` POST body still requires a valid signed header.
  */
 function isOgStorageNodeBody(body: ArrayBuffer | undefined): boolean {
   if (!body) return false
@@ -152,10 +152,13 @@ async function handleProxy(req: Request) {
   try {
     const body = await readLimitedBody(req)
 
-    // 0G storage-node JSON-RPC (all `zgs_*` methods) is allowed without app
-    // auth -- these calls come from the 0G SDK itself and target public storage
-    // nodes. Everything else must present a valid signed header.
-    if (!isOgStorageNodeBody(body)) {
+    // 0G storage-node traffic is allowed without app auth: the calls come from
+    // the 0G SDK itself and target public storage nodes. GET is inherently a
+    // read (download / proof fetch); POST bodies must be all-`zgs_*`. Anything
+    // else must present a valid signed header.
+    const isOgNodeRead = req.method === 'GET'
+    const isOgNodeRpc = isOgStorageNodeBody(body)
+    if (!isOgNodeRead && !isOgNodeRpc) {
       const auth = verifyAuth(req)
       if (!auth.ok) return auth.response
 
