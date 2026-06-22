@@ -147,6 +147,28 @@ export const useVault = create<VaultState>((set, get) => ({
         receivedRecords: [],
       })
       await get().refresh()
+
+      // Publish our public key so other users can encrypt shared records to us.
+      // Inbound shares are decrypted with the AUTO-WALLET private key, so we must
+      // register the auto-wallet's PUBLIC key (not the main wallet's), keyed by
+      // our main wallet address -- that is the value senders look up at
+      // GET /api/og/pubkey before encrypting. Best-effort and fire-and-forget:
+      // it only affects inbound sharing and reuses the auth header refresh()
+      // already cached, so it never triggers an extra wallet signature.
+      void (async () => {
+        try {
+          const publicKey = new ethers.SigningKey(autoWalletPk).publicKey
+          const auth = await buildAuthHeader(signer, address)
+          if (!auth) return
+          await fetch('/api/og/pubkey', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-medivault-auth': auth },
+            body: JSON.stringify({ address, publicKey }),
+          })
+        } catch (e) {
+          console.warn('Failed to register sharing public key:', e)
+        }
+      })()
     } catch (err) {
       set({ status: 'disconnected', error: err instanceof Error ? err.message : 'Failed to connect wallet.' })
     }
