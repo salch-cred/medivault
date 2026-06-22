@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ShieldPlus, FolderOpen, Clock, Activity, ArrowRightLeft, HeartPulse, MessageSquare, Database, Zap } from 'lucide-react'
+import { ShieldPlus, FolderOpen, Clock, Activity, ArrowRightLeft, HeartPulse, MessageSquare, Database, Zap, Network, History, BadgeCheck, Anchor } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WalletConnect } from '@/components/wallet-connect'
 
@@ -15,6 +15,10 @@ const NAV = [
   { href: '/vault/transactions', label: 'Transactions', icon: Database },
   { href: '/vault/chat', label: 'Chat', icon: MessageSquare },
   { href: '/vault/swap', label: 'Swap', icon: Zap },
+  { href: '/vault/network', label: '0G network health', icon: Network },
+  { href: '/vault/ledger', label: 'Consent ledger', icon: History },
+  { href: '/vault/prove', label: 'Selective-disclosure proof', icon: BadgeCheck },
+  { href: '/vault/anchor', label: 'Anchor index on-chain', icon: Anchor },
 ]
 
 export function DesktopSidebar() {
@@ -31,7 +35,7 @@ export function DesktopSidebar() {
         </span>
       </Link>
 
-      <nav className="flex flex-1 flex-col gap-2">
+      <nav className="flex flex-1 flex-col gap-2 overflow-y-auto">
         {NAV.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/vault' && pathname.startsWith(item.href))
           const Icon = item.icon
