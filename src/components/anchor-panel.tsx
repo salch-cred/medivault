@@ -142,12 +142,12 @@ export function AnchorPanel() {
             <p className="text-xs text-muted-foreground">Current durable index root</p>
             {loading ? (
               <span className="inline-flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading\u2026
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading&hellip;
               </span>
             ) : indexRoot ? (
               <p className="font-mono text-sm break-all">{indexRoot}</p>
             ) : (
-              <p className="text-muted-foreground">No durable index yet \u2014 upload a record first.</p>
+              <p className="text-muted-foreground">No durable index yet &mdash; upload a record first.</p>
             )}
             {!loading && indexRoot && (
               <div className="mt-2">
