@@ -96,7 +96,7 @@ export function deriveStreamId(owner: string): string {
  *
  * Each uploaded record gets its own 32-byte key via HKDF-SHA256 so that
  * compromising one record's key never reveals any other record. The salt is
- * stored (in the clear — it is not secret) in RecordMeta so the key can be
+ * stored (in the clear \u2014 it is not secret) in RecordMeta so the key can be
  * reproduced on download.
  *
  * Records written before this field existed have no salt and continue to use
@@ -165,6 +165,16 @@ function bytesToHex(bytes: Uint8Array): string {
 /** Hex-encode a salt for storage in RecordMeta. */
 export function saltToHex(salt: Uint8Array): string {
   return bytesToHex(salt)
+}
+
+/**
+ * Content address (keccak-256) of the raw, pre-encryption file bytes. Used to
+ * detect duplicate uploads of the exact same document. This is computed over
+ * plaintext locally and never leaves the device; only the resulting hash is
+ * stored in RecordMeta.
+ */
+export function contentHashHex(bytes: Uint8Array): string {
+  return ethers.keccak256(bytes)
 }
 
 /** Encode a string key into bytes for 0G-KV. */
