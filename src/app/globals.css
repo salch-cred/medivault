@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* MOBILE: PITCH BLACK AND GRAY MIX THEME */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 63%;
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 152 58% 36%;
+    --success-foreground: 0 0% 100%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 0 0% 98%;
+    --radius: 1rem;
+  }
+
+  /* DESKTOP (768px and above): SLEEK LIGHT THEME */
+  @media (min-width: 768px) {
+    :root {
+      --background: 0 0% 100%;
+      --foreground: 0 0% 9%;
+      --card: 0 0% 100%;
+      --card-foreground: 0 0% 9%;
+      --popover: 0 0% 100%;
+      --popover-foreground: 0 0% 9%;
+      --primary: 0 0% 9%;
+      --primary-foreground: 0 0% 98%;
+      --secondary: 0 0% 96%;
+      --secondary-foreground: 0 0% 9%;
+      --muted: 0 0% 96%;
+      --muted-foreground: 0 0% 45%;
+      --accent: 0 0% 96%;
+      --accent-foreground: 0 0% 9%;
+      --destructive: 0 84% 60%;
+      --destructive-foreground: 0 0% 98%;
+      --success: 152 58% 36%;
+      --success-foreground: 0 0% 100%;
+      --border: 0 0% 90%;
+      --input: 0 0% 90%;
+      --ring: 0 0% 9%;
+    }
+  }
+
+  .dark {
+    /* Retain dark variables for components that explicitly check .dark class */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 63%;
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 152 58% 36%;
+    --success-foreground: 0 0% 100%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 0 0% 98%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@media print {
+  :root {
+    --background: 0 0% 100% !important;
+    --foreground: 0 0% 9% !important;
+    --card: 0 0% 100% !important;
+    --card-foreground: 0 0% 9% !important;
+    --popover: 0 0% 100% !important;
+    --popover-foreground: 0 0% 9% !important;
+    --primary: 0 0% 9% !important;
+    --primary-foreground: 0 0% 98% !important;
+    --secondary: 0 0% 96% !important;
+    --secondary-foreground: 0 0% 9% !important;
+    --muted: 0 0% 96% !important;
+    --muted-foreground: 0 0% 45% !important;
+    --accent: 0 0% 96% !important;
+    --accent-foreground: 0 0% 9% !important;
+    --destructive: 0 84% 60% !important;
+    --destructive-foreground: 0 0% 98% !important;
+    --success: 152 58% 36% !important;
+    --success-foreground: 0 0% 100% !important;
+    --border: 0 0% 90% !important;
+    --input: 0 0% 90% !important;
+    --ring: 0 0% 9% !important;
+  }
+
+  body {
+    background-color: white !important;
+    color: black !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  header, nav, footer, aside {
+    display: none !important;
+  }
+}
+
+/* ----------------------------------------------------------------- */
+/* Mobile / touch ergonomics                                         */
+/* ----------------------------------------------------------------- */
+
+/* Respect the notch / home indicator. `viewport-fit=cover` is set in the
+   layout, so these give us reliable insets on iOS Safari and modern Android. */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.h-safe-top {
+  height: env(safe-area-inset-top);
+}
+
+/* Remove the grey 300ms-tap flash on mobile webviews for a native feel. */
+button,
+a,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+  /* iOS: keep links/buttons from showing the callout menu on long press. */
+  -webkit-touch-callout: none;
+}
+
+/* Momentum scrolling for scroll containers (feeds, chat, sheets). */
+.scroll-momentum {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Prevent iOS auto-zoom on input focus: inputs must be >= 16px font. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+@media (min-width: 768px) {
+
+  input,
+  select,
+  textarea {
+    font-size: inherit;
+  }
+}
+
+/* Respect users who prefer reduced motion: disable framer/animate.css-style
+   transforms globally so nothing moves. framer-motion also honors this via
+   its own MotionConfig, but this catches raw CSS/keyframe animation too. */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
