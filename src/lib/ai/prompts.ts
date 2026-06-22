@@ -55,16 +55,17 @@ export const LAB_EXTRACTION_GUIDANCE = `LAB RESULTS - READ CAREFULLY (the most i
 - "flag": if the report prints a marker (H, L, High, Low, *, up/down arrows), use it. Otherwise compare "value" to "referenceRange": below the low bound => "low", above the high bound => "high", within bounds => "normal". Use "unknown" ONLY when neither the value nor the range is numeric.
 - Scan the WHOLE document for tabular numeric results. Common sections: CBC, Lipid Panel, Metabolic Panel (BMP/CMP), Liver & Kidney function, Thyroid, HbA1c, Vitamins, Urinalysis.`
 
-export function languageInstruction(language?: string): string {
-  if (!language || language.toLowerCase() === 'english' || language.toLowerCase() === 'en') {
-    return ''
+export function languageInstruction(language?: string, isChat?: boolean): string {
+  if (!language || language.toLowerCase() === 'english') return ''
+  if (isChat) {
+    return `\n\nYou MUST write your entire response strictly in ${language}. Use the native alphabet/script of ${language}.`
   }
-  return `\n\nIMPORTANT: Write all human-readable text fields (title, plainLanguageSummary, notes, suggestions, remedies, follow-up actions) in ${language}. Keep JSON keys and enum values (docType, flag, severity, priority) in English exactly as specified.`
+  return `\n\nWrite ALL human-readable text (summary, notes, suggestions) strictly in ${language} using its native script. Keep JSON keys and enum values in English.`
 }
 
 export function eli5Instruction(eli5?: boolean): string {
   if (!eli5) return ''
-  return '\n\nEXPLAIN-LIKE-IM-5 MODE: Make plainLanguageSummary and all explanations extremely simple, as if explaining to someone with no medical or scientific background. Use short sentences and everyday words. Avoid jargon; when a medical term is unavoidable, explain it in parentheses.'
+  return '\n\nExplain everything as if to a curious 5-year-old: very short sentences, simple words, gentle and reassuring tone. Keep medical names but always explain what they mean.'
 }
 
 export function buildExtractionUserPrompt(
