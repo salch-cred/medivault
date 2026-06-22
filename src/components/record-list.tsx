@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { FileX2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { RecordCard } from '@/components/record-card'
@@ -10,8 +11,47 @@ import { staggerContainer, staggerItem } from '@/lib/motion'
 const containerVariants = staggerContainer(0.07, 0.04)
 const itemVariants = staggerItem
 
+// How many recent records to warm ahead of time. Summaries are tiny and are
+// cached in encrypted localStorage after the first fetch, so this mainly pays
+// off on the very first visit of a session.
+const PREFETCH_LIMIT = 12
+
 export function RecordList() {
-  const { records, loadingRecords } = useVault()
+  const { records, loadingRecords, summaries, failedSummaries, loadSummary, storage } = useVault()
+  const prewarmedRef = useRef(false)
+
+  // Predictive prefetch. Two cheap, best-effort warmups so the app feels
+  // instant:
+  //   1. prewarm() the 0G upload path once (warms edge proxies + the indexer's
+  //      sharded-node cache), so the next upload's node selection is instant.
+  //   2. Decrypt the most recent records' AI summaries in the background, so
+  //      opening a record renders immediately instead of showing a
+  //      "Decrypting summary..." spinner.
+  // loadSummary() already dedupes against the live store (returns cached, marks
+  // failures), so re-runs are harmless.
+  useEffect(() => {
+    if (!storage) return
+    if (!prewarmedRef.current) {
+      prewarmedRef.current = true
+      void storage.prewarm().catch(() => {})
+    }
+    let cancelled = false
+    void (async () => {
+      for (const meta of records.slice(0, PREFETCH_LIMIT)) {
+        if (cancelled) return
+        if (summaries[meta.id] || failedSummaries[meta.id]) continue
+        try {
+          await loadSummary(meta)
+        } catch {
+          // best-effort; the record page retries on open
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [records, storage])
 
   if (loadingRecords && records.length === 0) {
     return (
