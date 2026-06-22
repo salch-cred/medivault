@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Database, Cpu, HardDrive, Link2, Copy, Wallet, RefreshCw, Zap } from 'lucide-react'
+import { Database, Cpu, HardDrive, Link2, Copy, Wallet, RefreshCw, Zap, Activity } from 'lucide-react'
 import { ethers } from 'ethers'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -134,6 +134,12 @@ export function OgStatus() {
             </div>
           </div>
         )}
+        <Link href="/vault/network" className="w-full">
+          <Button variant="secondary" className="w-full text-xs font-medium" size="sm">
+            <Activity className="mr-2 h-3.5 w-3.5" />
+            0G network health
+          </Button>
+        </Link>
         <Link href="/vault/swap" className="w-full">
           <Button variant="secondary" className="w-full text-xs font-medium" size="sm">
             <Zap className="mr-2 h-3.5 w-3.5" />
