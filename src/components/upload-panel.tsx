@@ -297,7 +297,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             <p className="mt-1 text-xs text-primary/80">{detail}</p>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
-              TXT, MD, PDF, or an image (PNG/JPG \u2014 OCR). Encrypted before it leaves your device.
+              TXT, MD, PDF, or an image (PNG/JPG &mdash; OCR). Encrypted before it leaves your device.
             </p>
           )}
         </motion.div>
