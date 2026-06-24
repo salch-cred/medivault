@@ -25,6 +25,13 @@ function cleanString(v: unknown, max: number): string {
   return typeof v === 'string' ? v.slice(0, max) : ''
 }
 
+/** Generate a short random hex nonce for ID uniqueness under rapid requests. */
+function randomHex4(): string {
+  const arr = new Uint8Array(4)
+  crypto.getRandomValues(arr)
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 async function getLedger(address: string): Promise<ConsentEvent[]> {
   try {
     const res = await fetch(`${KV_BASE}/GetValue/${KV_NS}/${ledgerKey(address)}`)
@@ -61,8 +68,9 @@ export async function GET(req: Request) {
 
     const entries = await getLedger(address)
     return NextResponse.json(entries)
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
@@ -88,8 +96,11 @@ export async function POST(req: Request) {
     const entries = await getLedger(actor)
     const prevHash = entries.length ? entries[entries.length - 1].entryHash : GENESIS_HASH
 
+    // FIX: append a 4-byte random nonce to prevent ID collisions when two
+    // requests arrive within the same millisecond. Previously Date.now() alone
+    // was used, so concurrent POSTs could produce duplicate IDs.
     const core: ConsentEventCore = {
-      id: `${actor}_${Date.now()}`,
+      id: `${actor}_${Date.now()}_${randomHex4()}`,
       ts: new Date().toISOString(),
       type: evType,
       actor,
@@ -104,7 +115,8 @@ export async function POST(req: Request) {
     await saveLedger(actor, updated)
 
     return NextResponse.json({ success: true, entry })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

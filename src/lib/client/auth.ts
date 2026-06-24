@@ -11,36 +11,41 @@ import { ethers } from 'ethers'
  * and must not ask the user's main wallet to sign during upload.
  */
 
-const AUTH_CACHE_PREFIX = 'medivault_auth_v1'
 const AUTH_CACHE_TTL_MS = 70 * 1000 // 70s — under the server's 90s MAX_SKEW_MS
 
 type CachedAuth = { header: string; ts: number }
 
-function cacheKey(address: string): string {
-  return `${AUTH_CACHE_PREFIX}:${address.toLowerCase()}`
-}
+// FIX: auth header cache moved from sessionStorage to an in-memory Map.
+// Previously, the wallet signature (valid for 70s) was stored in
+// sessionStorage, which is accessible to XSS attacks. While the master seed
+// was correctly moved to memory-only storage, the auth cache still leaked
+// a replayable signature. Now we keep it in a module-level Map that is not
+// accessible to DOM scripts.
+const authCache = new Map<string, CachedAuth>()
 
 export function getCachedAuthHeader(address: string | null): string | null {
   if (!address) return null
-  try {
-    const raw = sessionStorage.getItem(cacheKey(address))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as CachedAuth
-    if (!parsed?.header || !parsed?.ts) return null
-    if (Date.now() - parsed.ts > AUTH_CACHE_TTL_MS) {
-      sessionStorage.removeItem(cacheKey(address))
-      return null
-    }
-    return parsed.header
-  } catch {
+  const key = address.toLowerCase()
+  const cached = authCache.get(key)
+  if (!cached) return null
+  if (Date.now() - cached.ts > AUTH_CACHE_TTL_MS) {
+    authCache.delete(key)
     return null
   }
+  return cached.header
 }
 
 function writeCached(address: string, header: string, ts: number): void {
-  try {
-    sessionStorage.setItem(cacheKey(address), JSON.stringify({ header, ts }))
-  } catch {}
+  authCache.set(address.toLowerCase(), { header, ts })
+}
+
+/** Clear the in-memory auth cache for an address (useful on disconnect). */
+export function clearAuthCache(address?: string | null): void {
+  if (address) {
+    authCache.delete(address.toLowerCase())
+  } else {
+    authCache.clear()
+  }
 }
 
 function generateNonce(): string {

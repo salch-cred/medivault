@@ -4,7 +4,7 @@
 
 > Your medical records are scattered, confusing, and you’re scared to upload them anywhere. MediVault uses AI to explain them in plain language and stores them encrypted on 0G — owned by you, readable by no one else.
 
-Built for the **0G Zero Cup** on the **0G Galileo Testnet (chain 16602)**.
+Built for the **0G Zero Cup** on the **0G Mainnet (chain 16661)**.
 
 ---
 
@@ -102,15 +102,15 @@ npm run dev
 # open http://localhost:3000
 ```
 
-You’ll need the **MetaMask** browser extension. Add the **0G Galileo Testnet**:
+You’ll need the **MetaMask** browser extension. Add the **0G Mainnet** network:
 
-- RPC URL: `https://evmrpc-testnet.0g.ai`
-- Chain ID: `16602`
-- Block explorer: `https://chainscan-galileo.0g.ai`
+- RPC URL: `https://evmrpc.0g.ai`
+- Chain ID: `16661`
+- Block explorer: `https://chainscan.0g.ai`
 
-### Get free testnet tokens
+### Get mainnet tokens
 
-Uploading to 0G Storage and writing the 0G-KV index are on-chain operations, so you need a small amount of testnet gas:
+Uploading to 0G Storage and writing the 0G-KV index are on-chain operations, so you need a small amount of 0G gas:
 
 1. Open the faucet: **https://faucet.0g.ai**
 2. Paste your wallet address and request tokens.
@@ -132,10 +132,10 @@ Client-side (`NEXT_PUBLIC_*`, used by the wallet/SDK in the browser):
 
 | Variable | Description |
 | --- | --- |
-| `NEXT_PUBLIC_ZG_RPC_URL` | `https://evmrpc-testnet.0g.ai` |
-| `NEXT_PUBLIC_ZG_INDEXER_RPC` | `https://indexer-storage-testnet-turbo.0g.ai` |
-| `NEXT_PUBLIC_ZG_CHAIN_ID` | `16602` |
-| `NEXT_PUBLIC_ZG_KV_NODE_URL` | 0G-KV node URL (turbo testnet) |
+| `NEXT_PUBLIC_ZG_RPC_URL` | `https://evmrpc.0g.ai` (0G Mainnet) |
+| `NEXT_PUBLIC_ZG_INDEXER_RPC` | `https://indexer-storage-turbo.0g.ai` |
+| `NEXT_PUBLIC_ZG_CHAIN_ID` | `16661` |
+| `NEXT_PUBLIC_ZG_KV_NODE_URL` | 0G-KV node URL (self-hosted; leave empty to use localStorage fallback) |
 | `NEXT_PUBLIC_ZG_FLOW_CONTRACT` | 0G flow contract address |
 | `NEXT_PUBLIC_APP_URL` | Your app URL (used for share links) |
 
@@ -162,7 +162,7 @@ See `.env.example` for the full list with defaults.
 
 > ⚠️ MediVault organizes and explains your records. **It is not medical advice.** Always consult a qualified clinician.
 
-> ℹ️ This is testnet software for a hackathon. The 0G SDK runtime API is version-sensitive; pin `@0gfoundation/0g-storage-ts-sdk` to a tested version and verify against the starter kit if upload/download behavior changes. Functional icons use `lucide-react`.
+> ℹ️ This software runs on 0G Mainnet. The 0G SDK runtime API is version-sensitive; pin `@0gfoundation/0g-storage-ts-sdk` to a tested version and verify against the starter kit if upload/download behavior changes. Functional icons use `lucide-react`.
 
 ---
 

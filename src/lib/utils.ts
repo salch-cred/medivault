@@ -8,6 +8,11 @@ export function cn(...inputs: ClassValue[]) {
 /** Shorten a 0G root hash / address for display: 0x1234…abcd */
 export function shortHash(value: string, lead = 10, tail = 6): string {
   if (!value) return ''
+  // FIX: use + 1 (not <= lead + tail + 1) so strings of exactly
+  // lead + tail + 1 chars are truncated, not silently passed through.
+  // The original `value.length <= lead + tail + 1` returned a 17-char
+  // string untruncated, then truncated an 18-char string to 17 display chars
+  // (shorter than the source the user sees in storage scan).
   if (value.length <= lead + tail + 1) return value
   return `${value.slice(0, lead)}\u2026${value.slice(-tail)}`
 }

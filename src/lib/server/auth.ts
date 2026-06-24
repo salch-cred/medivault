@@ -31,8 +31,20 @@ const MAX_QUESTION = 4_000 // chat question length
 
 // Rate limiting: per-address, per-action, in-memory (sufficient for a single
 // Vercel serverless instance; for multi-instance you'd use Redis or Upstash).
+//
+// FIX: prune expired entries on every write to prevent unbounded Map growth.
+// Previously expired entries were never removed, so a long-running process
+// would accumulate one entry per unique (address, action) pair ever seen.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
+
+/** Remove all entries whose reset window has already passed. */
+function pruneRateLimitMap(): void {
+  const now = Date.now()
+  for (const [key, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(key)
+  }
+}
 
 export function checkRateLimit(
   address: string,
@@ -43,6 +55,8 @@ export function checkRateLimit(
   const now = Date.now()
   const entry = rateLimitMap.get(key)
   if (!entry || now > entry.resetAt) {
+    // Prune stale entries whenever a new window starts to cap Map size.
+    pruneRateLimitMap()
     rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
     return true
   }

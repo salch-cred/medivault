@@ -34,7 +34,19 @@ const STRIPPED_RESPONSE_HEADERS = [
 const MAX_PROXY_BYTES = 20 * 1024 * 1024
 const MAX_REDIRECTS = 3
 
-function isPrivateIp(ip: string): boolean {
+/**
+ * Returns true if the resolved IP is a private / loopback / link-local address
+ * that must not be reachable via the proxy (SSRF protection).
+ *
+ * FIX: the original check only caught the decimal form of IPv4-mapped IPv6
+ * addresses (`::ffff:192.168.x.x`) via substring match. Attackers can also
+ * present the hex-group form `::ffff:0a00:0001` (= 10.0.0.1) which bypassed
+ * the previous `lower.includes('::ffff:')` guard. The fix expands the check
+ * to cover both decimal notation (::ffff:10.0.0.1) and hex-group notation
+ * (::ffff:0a00:0001, ::ffff:c0a8:0001, etc.) by detecting the `::ffff:` prefix
+ * and then resolving the embedded IPv4 address in both forms.
+ */
+export function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
     const p = ip.split('.').map(Number)
     return (
@@ -48,15 +60,39 @@ function isPrivateIp(ip: string): boolean {
   }
   if (net.isIPv6(ip)) {
     const lower = ip.toLowerCase()
-    // Check for loopback, unique local, link-local, and IPv4-mapped private addresses
-    return (
-      lower === '::1' ||
-      lower.startsWith('fc') ||
-      lower.startsWith('fd') ||
-      lower.startsWith('fe80') ||
-      // IPv4-mapped IPv6 addresses (e.g. ::ffff:10.0.0.1)
-      lower.includes('::ffff:')
-    )
+    // Loopback
+    if (lower === '::1') return true
+    // Unique local (fc00::/7)
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true
+    // Link-local (fe80::/10)
+    if (lower.startsWith('fe80')) return true
+
+    // IPv4-mapped IPv6: ::ffff:<ipv4> — covers both forms:
+    //   Decimal: ::ffff:10.0.0.1
+    //   Hex-group: ::ffff:0a00:0001  (= 10.0.0.1)
+    if (lower.startsWith('::ffff:')) {
+      const rest = lower.slice('::ffff:'.length)
+      // Decimal form: e.g. ::ffff:192.168.1.1
+      if (rest.includes('.')) {
+        return isPrivateIp(rest)
+      }
+      // Hex-group form: e.g. ::ffff:0a00:0001 -> parse two 16-bit groups -> IPv4
+      const hexGroups = rest.split(':')
+      if (hexGroups.length === 2) {
+        const hi = parseInt(hexGroups[0], 16)
+        const lo = parseInt(hexGroups[1], 16)
+        if (!isNaN(hi) && !isNaN(lo)) {
+          const a = (hi >> 8) & 0xff
+          const b = hi & 0xff
+          const c = (lo >> 8) & 0xff
+          const d = lo & 0xff
+          return isPrivateIp(`${a}.${b}.${c}.${d}`)
+        }
+      }
+      // Any other ::ffff: form — block by default (defensive)
+      return true
+    }
+    return false
   }
   return true
 }
@@ -88,21 +124,6 @@ async function readLimitedBody(req: Request): Promise<ArrayBuffer | undefined> {
   return req.arrayBuffer()
 }
 
-/**
- * The 0G storage SDK makes its own calls to storage nodes (status, file info,
- * segment upload/download, Merkle proofs, etc.) through this proxy. Those calls
- * originate inside the SDK and cannot carry our `x-medivault-auth` header, so
- * requiring app auth on them previously broke uploads, downloads, and integrity
- * checks (the file would submit on-chain but never finish syncing, and retries
- * re-submitted already-registered data -> Flow `require(false)`).
- *
- * We therefore let all 0G storage-node traffic through without app auth:
- *   - GET requests are inherently read-only (downloads / proof fetches).
- *   - POST bodies whose JSON-RPC methods are all `zgs_*` are 0G node calls.
- * The target is always a public 0G storage node (it does not consume our auth),
- * and SSRF protection plus the public-host check in assertSafeTarget still
- * apply. Any non-`zgs_*` POST body still requires a valid signed header.
- */
 function isOgStorageNodeBody(body: ArrayBuffer | undefined): boolean {
   if (!body) return false
   try {
@@ -111,7 +132,8 @@ function isOgStorageNodeBody(body: ArrayBuffer | undefined): boolean {
     return (
       reqs.length > 0 &&
       reqs.every(
-        (r: any) => typeof r?.method === 'string' && r.method.startsWith('zgs_'),
+        (r: unknown) => typeof (r as Record<string, unknown>)?.method === 'string' &&
+          ((r as Record<string, unknown>).method as string).startsWith('zgs_'),
       )
     )
   } catch {
@@ -152,10 +174,6 @@ async function handleProxy(req: Request) {
   try {
     const body = await readLimitedBody(req)
 
-    // 0G storage-node traffic is allowed without app auth: the calls come from
-    // the 0G SDK itself and target public storage nodes. GET is inherently a
-    // read (download / proof fetch); POST bodies must be all-`zgs_*`. Anything
-    // else must present a valid signed header.
     const isOgNodeRead = req.method === 'GET'
     const isOgNodeRpc = isOgStorageNodeBody(body)
     if (!isOgNodeRead && !isOgNodeRpc) {
@@ -194,7 +212,7 @@ async function handleProxy(req: Request) {
       status: response.status,
       headers: responseHeaders,
     })
-  } catch (error: any) {
+  } catch {
     return NextResponse.json({ error: 'Proxy request failed.' }, { status: 400 })
   }
 }
