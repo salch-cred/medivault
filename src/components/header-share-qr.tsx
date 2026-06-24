@@ -10,12 +10,35 @@ import { cn } from '@/lib/utils'
 
 type Tab = 'my-qr' | 'scan'
 
+// BarcodeDetector is Chrome/Android only — not available on iOS Safari
 declare class BarcodeDetector {
   constructor(options?: { formats: string[] })
   detect(
     image: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | ImageBitmap,
   ): Promise<Array<{ rawValue: string; format: string }>>
   static getSupportedFormats(): Promise<string[]>
+}
+
+const hasBarcodeDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window
+
+/** Scan a single frame from a <video> using jsQR (works on all browsers). */
+async function scanFrameWithJsQr(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+): Promise<string | null> {
+  if (video.readyState < 2 || video.videoWidth === 0) return null
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(video, 0, 0)
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  // Lazy-load jsQR so it doesn’t bloat the initial bundle
+  const { default: jsQR } = await import('jsqr')
+  const code = jsQR(imageData.data, imageData.width, imageData.height, {
+    inversionAttempts: 'dontInvert',
+  })
+  return code?.data ?? null
 }
 
 export function HeaderShareQr() {
@@ -79,34 +102,64 @@ export function HeaderShareQr() {
       const video = videoRef.current
       if (!video) { stopCamera(); return }
       video.srcObject = stream
+      // playsInline + muted required for iOS autoplay
+      video.setAttribute('playsinline', 'true')
+      video.muted = true
       await video.play()
       setScanning(true)
 
-      if (typeof BarcodeDetector === 'undefined') return
+      if (hasBarcodeDetector) {
+        // ---- Chrome / Android path — native BarcodeDetector ----
+        const detector = new BarcodeDetector({ formats: ['qr_code'] })
+        const tick = async () => {
+          if (!streamRef.current) return
+          try {
+            const hits = await detector.detect(video)
+            if (hits.length > 0) {
+              const result = hits[0].rawValue
+              setScanResult(result)
+              stopCamera()
+              toast.success('QR scanned!', {
+                description: result.length > 40 ? result.slice(0, 40) + '…' : result,
+              })
+              return
+            }
+          } catch { /* ignore per-frame errors */ }
+          rafRef.current = requestAnimationFrame(tick)
+        }
+        rafRef.current = requestAnimationFrame(tick)
+      } else {
+        // ---- iOS Safari / Firefox path — jsQR canvas loop ----
+        const canvas = canvasRef.current
+        if (!canvas) return
 
-      const detector = new BarcodeDetector({ formats: ['qr_code'] })
-      const tick = async () => {
-        if (!streamRef.current) return
-        try {
-          const hits = await detector.detect(video)
-          if (hits.length > 0) {
-            const result = hits[0].rawValue
-            setScanResult(result)
-            stopCamera()
-            toast.success('QR scanned!', {
-              description: result.length > 40 ? result.slice(0, 40) + '...' : result,
-            })
-            return
+        // Scan every ~150 ms to keep CPU sane on mobile
+        let lastScan = 0
+        const tick = async (ts: number) => {
+          if (!streamRef.current) return
+          if (ts - lastScan >= 150) {
+            lastScan = ts
+            try {
+              const result = await scanFrameWithJsQr(video, canvas)
+              if (result) {
+                setScanResult(result)
+                stopCamera()
+                toast.success('QR scanned!', {
+                  description: result.length > 40 ? result.slice(0, 40) + '…' : result,
+                })
+                return
+              }
+            } catch { /* ignore per-frame errors */ }
           }
-        } catch { /* ignore per-frame errors */ }
+          rafRef.current = requestAnimationFrame(tick)
+        }
         rafRef.current = requestAnimationFrame(tick)
       }
-      rafRef.current = requestAnimationFrame(tick)
     } catch (err: unknown) {
       const msg =
         err instanceof Error
           ? err.message.toLowerCase().includes('permission')
-            ? 'Camera permission denied. Allow access and try again.'
+            ? 'Camera permission denied. Allow access in browser settings and try again.'
             : err.message
           : 'Camera unavailable'
       setCameraError(msg)
@@ -120,24 +173,52 @@ export function HeaderShareQr() {
     return () => stopCamera()
   }, [tab, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Decode a QR from a user-picked image file — works on all platforms. */
   const handleFileCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
     const bitmap = await createImageBitmap(file)
-    if (typeof BarcodeDetector !== 'undefined') {
+
+    // Try native BarcodeDetector first (fast on Android)
+    if (hasBarcodeDetector) {
       try {
         const detector = new BarcodeDetector({ formats: ['qr_code'] })
         const hits = await detector.detect(bitmap)
-        if (hits.length > 0) { setScanResult(hits[0].rawValue); stopCamera(); toast.success('QR decoded!'); return }
-      } catch {}
+        if (hits.length > 0) {
+          setScanResult(hits[0].rawValue)
+          stopCamera()
+          toast.success('QR decoded!')
+          return
+        }
+      } catch { /* fall through to jsQR */ }
     }
+
+    // jsQR fallback (iOS Safari, Firefox, etc.)
     const canvas = canvasRef.current
     if (canvas) {
-      canvas.width = bitmap.width; canvas.height = bitmap.height
-      canvas.getContext('2d')?.drawImage(bitmap, 0, 0)
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0)
+        const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
+        try {
+          const { default: jsQR } = await import('jsqr')
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert',
+          })
+          if (code?.data) {
+            setScanResult(code.data)
+            stopCamera()
+            toast.success('QR decoded!')
+            return
+          }
+        } catch { /* fall through */ }
+      }
     }
-    toast.error('No QR code found - try a clearer image or move closer.')
+
+    toast.error('No QR code found — try a clearer image or move closer.')
   }
 
   return (
@@ -152,23 +233,15 @@ export function HeaderShareQr() {
       </button>
 
       {open && (
-        // Backdrop — flex column, items at bottom so sheet anchors to bottom edge
         <div
           className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60 backdrop-blur-sm"
           onClick={handleClose}
         >
-          {/*
-            Sheet:
-            - max-h-[90dvh] + overflow-y-auto  → never taller than 90% of the
-              visible viewport, scrollable if content somehow exceeds it
-            - pb-safe                           → clears iPhone home indicator
-            - rounded top corners only on mobile; full rounded on sm+
-          */}
           <div
             className="relative w-full overflow-y-auto rounded-t-2xl border-t border-x border-border bg-background shadow-2xl max-h-[90dvh] sm:mx-auto sm:mb-6 sm:max-w-sm sm:rounded-2xl sm:border"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Drag handle pill */}
+            {/* Drag handle */}
             <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-border" />
 
             {/* Header */}
@@ -209,7 +282,7 @@ export function HeaderShareQr() {
               ))}
             </div>
 
-            {/* Content — pb-safe ensures content clears home indicator */}
+            {/* Content */}
             <div className="px-5 pb-safe">
 
               {/* My QR tab */}
@@ -253,17 +326,18 @@ export function HeaderShareQr() {
                           </Button>
                         </div>
                       ) : (
-                        /*
-                          Viewfinder:
-                          - w-full fills the sheet width
-                          - max-h-64 caps height on small phones so buttons
-                            below remain reachable without scrolling
-                          - aspect-video is gentler than aspect-square on
-                            short-screen devices
-                        */
                         <div className="relative w-full max-h-64 overflow-hidden rounded-xl border bg-black aspect-video">
-                          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
+                          {/* hidden canvas used for jsQR frame scanning */}
+                          <canvas ref={canvasRef} className="hidden" />
+                          <video
+                            ref={videoRef}
+                            className="h-full w-full object-cover"
+                            muted
+                            playsInline
+                            autoPlay
+                          />
 
+                          {/* Corner viewfinder */}
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                             <div className="relative h-36 w-36">
                               <span className="absolute left-0 top-0 h-7 w-7 rounded-tl-md border-l-2 border-t-2 border-white/90" />
@@ -278,21 +352,39 @@ export function HeaderShareQr() {
 
                           {!scanning && !cameraError && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                              <p className="text-xs text-white/60">Starting camera...</p>
+                              <p className="text-xs text-white/60">Starting camera…</p>
                             </div>
                           )}
                         </div>
                       )}
 
+                      {/* Photo picker — primary option on iOS since BarcodeDetector is unavailable */}
                       <label className="w-full cursor-pointer">
-                        <div className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted active:bg-muted">
+                        <div className={cn(
+                          'flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs transition-colors hover:bg-muted active:bg-muted',
+                          !hasBarcodeDetector && !cameraError
+                            ? 'border-primary/40 bg-primary/5 text-primary font-medium'
+                            : 'border-dashed border-border text-muted-foreground',
+                        )}>
                           <Camera className="h-3.5 w-3.5 shrink-0" />
-                          Scan from photo / image file
+                          {!hasBarcodeDetector && !cameraError
+                            ? 'Take photo or choose from camera roll'
+                            : 'Scan from photo / image file'}
                         </div>
-                        <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={handleFileCapture} />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="sr-only"
+                          onChange={handleFileCapture}
+                        />
                       </label>
 
-                      <canvas ref={canvasRef} className="hidden" />
+                      {!hasBarcodeDetector && !cameraError && (
+                        <p className="text-center text-[10px] text-muted-foreground">
+                          Live scanning uses the camera above. On iOS, tap the button to use your camera roll instead.
+                        </p>
+                      )}
                     </>
                   ) : (
                     <div className="flex w-full flex-col items-center gap-3">
