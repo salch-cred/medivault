@@ -61,10 +61,21 @@ const config: Config = {
       keyframes: {
         'fade-in-0': { from: { opacity: '0' }, to: { opacity: '1' } },
         'fade-out-0': { from: { opacity: '1' }, to: { opacity: '0' } },
+        // Scan-line sweeps top→bottom inside the QR viewfinder
+        'scan-line': {
+          '0%':   { top: '8px',  opacity: '1' },
+          '45%':  { opacity: '1' },
+          '50%':  { top: 'calc(100% - 8px)', opacity: '0.6' },
+          '51%':  { opacity: '0' },
+          '52%':  { top: '8px',  opacity: '0' },
+          '55%':  { opacity: '1' },
+          '100%': { top: '8px',  opacity: '1' },
+        },
       },
       animation: {
         in: 'fade-in-0 0.15s ease-out',
         out: 'fade-out-0 0.15s ease-in',
+        'scan-line': 'scan-line 2.4s ease-in-out infinite',
       },
     },
   },
