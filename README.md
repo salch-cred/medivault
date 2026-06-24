@@ -10,7 +10,7 @@
 >
 > Deployed on **0G Mainnet (chain 16661)** — real transactions, real encrypted storage, no testnet.
 
-Built for the **0G Zero Cup** · [Demo video on YouTube](https://medivault-ecru.vercel.app)
+**[▶️ Watch the demo on YouTube](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)** · Built for the **0G Zero Cup**
 
 ---
 
