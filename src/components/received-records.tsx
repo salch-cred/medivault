@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ChevronRight, FileSpreadsheet, User2 } from 'lucide-react'
+import { ChevronRight, Inbox, User2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { DocTypeIcon } from '@/components/doc-type-icon'
 import { Badge } from '@/components/ui/badge'
@@ -19,11 +19,13 @@ export function ReceivedRecords() {
 
   if (receivedRecords.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border px-6 py-8 text-center bg-card/20">
-        <FileSpreadsheet className="h-7 w-7 text-muted-foreground" />
-        <p className="mt-2 text-sm font-medium">No shared documents received yet</p>
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border px-6 py-12 text-center bg-card/20">
+        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+          <Inbox className="h-7 w-7 text-primary" />
+        </div>
+        <p className="text-sm font-semibold">No shared documents yet</p>
         <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-          When family, friends, or doctors share their E2E encrypted medical files with your wallet address, they will appear here.
+          When family, friends, or doctors share their E2E-encrypted medical files with your wallet address, they will appear here.
         </p>
       </div>
     )
@@ -53,19 +55,26 @@ export function ReceivedRecords() {
                 <CardContent className="flex min-h-[64px] items-center gap-3 p-4">
                   <DocTypeIcon type={record.docType} withTone />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="truncate text-[15px] font-semibold leading-tight md:text-base">
+                    {/* Title + doc-type badge — badge wraps below title on small screens */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <h3 className="min-w-0 truncate text-[15px] font-semibold leading-tight md:text-base">
                         {record.title}
                       </h3>
-                      <Badge variant="outline" className="shrink-0 text-xs gap-1 border-neutral-700">
-                        <User2 className="h-3 w-3" /> Shared by: {record.senderName}
+                      <Badge variant="secondary" className="shrink-0 text-xs">
+                        {(DOC_TYPE_LABELS as Record<string, string>)[record.docType] || record.docType}
                       </Badge>
                     </div>
+                    {/* Sender row */}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <User2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate max-w-[160px]">{record.senderName}</span>
+                      </span>
+                      <span className="hidden sm:inline">&middot;</span>
+                      <span className="font-mono">{shortHash(record.senderAddress)}</span>
+                    </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Document Date: {formatDate(record.date)} · Shared: {formatDate(record.sharedAt)}
-                    </p>
-                    <p className="mt-1 text-[11px] font-mono text-muted-foreground">
-                      Sender Address: {shortHash(record.senderAddress)}
+                      Doc: {formatDate(record.date)} &middot; Received: {formatDate(record.sharedAt)}
                     </p>
                   </div>
                   <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/60" />
