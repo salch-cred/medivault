@@ -7,6 +7,38 @@ export const dynamic = 'force-dynamic'
 const KV_BASE = 'https://keyvalue.immanuel.co/api/KeyVal'
 const KV_NS = 'p0vd5ml2'
 
+// ---------------------------------------------------------------------------
+// In-process rate limiter for pubkey GET: max 30 lookups per IP per minute.
+// This prevents authenticated users from bulk-enumerating all registered keys.
+// ---------------------------------------------------------------------------
+const RATE_WINDOW_MS = 60_000
+const RATE_MAX = 30
+
+type RateBucket = { count: number; windowStart: number }
+const rateBuckets = new Map<string, RateBucket>()
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const bucket = rateBuckets.get(ip)
+  if (!bucket || now - bucket.windowStart > RATE_WINDOW_MS) {
+    rateBuckets.set(ip, { count: 1, windowStart: now })
+    return true
+  }
+  if (bucket.count >= RATE_MAX) return false
+  bucket.count++
+  return true
+}
+
+// Evict stale buckets periodically to avoid unbounded Map growth.
+setInterval(() => {
+  const cutoff = Date.now() - RATE_WINDOW_MS
+  for (const [ip, b] of rateBuckets) {
+    if (b.windowStart < cutoff) rateBuckets.delete(ip)
+  }
+}, RATE_WINDOW_MS)
+
+// ---------------------------------------------------------------------------
+
 function pubkeyKey(address: string): string {
   return `pubkey_${address.toLowerCase()}`
 }
@@ -46,6 +78,18 @@ export async function GET(req: Request) {
     // Only authenticated users can look up another user's public key.
     const auth = verifyAuth(req)
     if (!auth.ok) return auth.response
+
+    // Rate-limit per originating IP to prevent bulk enumeration.
+    const ip =
+      (req.headers as Headers).get('x-forwarded-for')?.split(',')[0].trim() ??
+      (req.headers as Headers).get('x-real-ip') ??
+      'unknown'
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment before looking up another key.' },
+        { status: 429 },
+      )
+    }
 
     const { searchParams } = new URL(req.url)
     const addressRaw = searchParams.get('address')
