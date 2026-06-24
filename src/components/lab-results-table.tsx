@@ -21,13 +21,20 @@ export function LabResultsTable({ results }: { results: LabResult[] }) {
     return <p className="text-sm text-muted-foreground">No lab values found in this record.</p>
   }
   return (
-    <div className="overflow-hidden rounded-xl border border-border">
-      <table className="w-full text-sm">
+    /*
+      overflow-x-auto  — lets the table scroll horizontally on narrow screens
+                         so the Flag column is never clipped by the parent
+                         overflow-hidden border wrapper.
+      The inner border + rounded corners are moved to the scroll container
+      so they don't fight the overflow behaviour.
+    */
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="min-w-full text-sm">
         <thead className="bg-muted/60 text-left text-xs uppercase text-muted-foreground">
           <tr>
             <th className="px-3 py-2 font-medium">Test</th>
             <th className="px-3 py-2 font-medium">Value</th>
-            <th className="px-3 py-2 font-medium">Reference</th>
+            <th className="px-3 py-2 font-medium hidden sm:table-cell">Reference</th>
             <th className="px-3 py-2 font-medium">Flag</th>
           </tr>
         </thead>
@@ -35,18 +42,21 @@ export function LabResultsTable({ results }: { results: LabResult[] }) {
           {results.map((r, i) => (
             <tr key={`${r.test}-${i}`}>
               <td className="px-3 py-2 font-medium">{r.test}</td>
-              <td className="px-3 py-2">
+              <td className="px-3 py-2 whitespace-nowrap">
                 {r.value} {r.unit}
               </td>
-              <td className="px-3 py-2 text-muted-foreground">{r.referenceRange || '—'}</td>
-              <td className="px-3 py-2">
+              <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
+                {r.referenceRange || '\u2014'}
+              </td>
+              {/* whitespace-nowrap prevents the badge from being cut mid-render */}
+              <td className="px-3 py-2 whitespace-nowrap">
                 <span
                   className={cn(
                     'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium capitalize',
                     FLAG_STYLE[r.flag],
                   )}
                 >
-                  <FlagIcon flag={r.flag} /> {r.flag}
+                  <FlagIcon flag={r.flag} />{r.flag}
                 </span>
               </td>
             </tr>

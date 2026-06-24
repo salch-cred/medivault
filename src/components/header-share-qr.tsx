@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils'
 
 type Tab = 'my-qr' | 'scan'
 
-// BarcodeDetector is a modern browser API not yet in stock TS lib.
 declare class BarcodeDetector {
   constructor(options?: { formats: string[] })
   detect(
@@ -19,15 +18,6 @@ declare class BarcodeDetector {
   static getSupportedFormats(): Promise<string[]>
 }
 
-/**
- * Mobile-only header action (hidden on lg+) that opens a bottom-sheet with
- * two tabs:
- *
- *  "My QR"   - shows the wallet address as a scannable QR code + copy button.
- *  "Scan QR" - opens the rear camera, detects QR codes in real-time via the
- *              BarcodeDetector Web API, with a file-input fallback for
- *              browsers that do not support it (e.g. Safari < 17).
- */
 export function HeaderShareQr() {
   const { address } = useVault()
   const [open, setOpen] = useState(false)
@@ -80,28 +70,21 @@ export function HeaderShareQr() {
     setScanResult(null)
     setCameraError(null)
     setScanning(false)
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 640 } },
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false,
       })
       streamRef.current = stream
-
       const video = videoRef.current
       if (!video) { stopCamera(); return }
       video.srcObject = stream
       await video.play()
       setScanning(true)
 
-      if (typeof BarcodeDetector === 'undefined') {
-        // No native BarcodeDetector - live preview still shown;
-        // file-input is the primary decode path in this case.
-        return
-      }
+      if (typeof BarcodeDetector === 'undefined') return
 
       const detector = new BarcodeDetector({ formats: ['qr_code'] })
-
       const tick = async () => {
         if (!streamRef.current) return
         try {
@@ -115,9 +98,7 @@ export function HeaderShareQr() {
             })
             return
           }
-        } catch {
-          // detect() can throw on some frames - ignore and retry next frame
-        }
+        } catch { /* ignore per-frame errors */ }
         rafRef.current = requestAnimationFrame(tick)
       }
       rafRef.current = requestAnimationFrame(tick)
@@ -125,27 +106,20 @@ export function HeaderShareQr() {
       const msg =
         err instanceof Error
           ? err.message.toLowerCase().includes('permission')
-            ? 'Camera permission denied. Allow camera access and try again.'
+            ? 'Camera permission denied. Allow access and try again.'
             : err.message
           : 'Camera unavailable'
       setCameraError(msg)
     }
   }, [stopCamera])
 
-  // Start / stop camera when the Scan tab becomes active
   useEffect(() => {
     if (!open) return
-    if (tab === 'scan') {
-      void startScanner()
-    } else {
-      stopCamera()
-      setScanResult(null)
-      setCameraError(null)
-    }
+    if (tab === 'scan') void startScanner()
+    else { stopCamera(); setScanResult(null); setCameraError(null) }
     return () => stopCamera()
   }, [tab, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // File-input fallback for browsers without BarcodeDetector
   const handleFileCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -155,18 +129,12 @@ export function HeaderShareQr() {
       try {
         const detector = new BarcodeDetector({ formats: ['qr_code'] })
         const hits = await detector.detect(bitmap)
-        if (hits.length > 0) {
-          setScanResult(hits[0].rawValue)
-          stopCamera()
-          toast.success('QR decoded!')
-          return
-        }
+        if (hits.length > 0) { setScanResult(hits[0].rawValue); stopCamera(); toast.success('QR decoded!'); return }
       } catch {}
     }
     const canvas = canvasRef.current
     if (canvas) {
-      canvas.width = bitmap.width
-      canvas.height = bitmap.height
+      canvas.width = bitmap.width; canvas.height = bitmap.height
       canvas.getContext('2d')?.drawImage(bitmap, 0, 0)
     }
     toast.error('No QR code found - try a clearer image or move closer.')
@@ -174,7 +142,6 @@ export function HeaderShareQr() {
 
   return (
     <>
-      {/* Trigger - mobile/tablet only */}
       <button
         type="button"
         aria-label="Open QR and scanner"
@@ -184,18 +151,28 @@ export function HeaderShareQr() {
         <QrCode className="h-4 w-4" />
       </button>
 
-      {/* Bottom-sheet modal */}
       {open && (
+        // Backdrop — flex column, items at bottom so sheet anchors to bottom edge
         <div
-          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
+          className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60 backdrop-blur-sm"
           onClick={handleClose}
         >
+          {/*
+            Sheet:
+            - max-h-[90dvh] + overflow-y-auto  → never taller than 90% of the
+              visible viewport, scrollable if content somehow exceeds it
+            - pb-safe                           → clears iPhone home indicator
+            - rounded top corners only on mobile; full rounded on sm+
+          */}
           <div
-            className="relative w-full max-w-xs overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl sm:rounded-2xl"
+            className="relative w-full overflow-y-auto rounded-t-2xl border-t border-x border-border bg-background shadow-2xl max-h-[90dvh] sm:mx-auto sm:mb-6 sm:max-w-sm sm:rounded-2xl sm:border"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Drag handle pill */}
+            <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-border" />
+
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pb-3 pt-5">
+            <div className="flex items-center justify-between px-5 pb-3 pt-3">
               <h3 className="text-base font-bold">MediVault ID</h3>
               <button
                 type="button"
@@ -232,12 +209,12 @@ export function HeaderShareQr() {
               ))}
             </div>
 
-            {/* Content */}
-            <div className="px-5 pb-6">
+            {/* Content — pb-safe ensures content clears home indicator */}
+            <div className="px-5 pb-safe">
 
-              {/* My QR */}
+              {/* My QR tab */}
               {tab === 'my-qr' && (
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-4 pb-6">
                   <p className="text-center text-xs text-muted-foreground">
                     Scan this so others can send you records
                   </p>
@@ -248,9 +225,7 @@ export function HeaderShareQr() {
                     {address}
                   </p>
                   <Button className="w-full" size="sm" onClick={() => copyAddr()}>
-                    {copied
-                      ? <Check className="mr-2 h-3.5 w-3.5" />
-                      : <Copy className="mr-2 h-3.5 w-3.5" />}
+                    {copied ? <Check className="mr-2 h-3.5 w-3.5" /> : <Copy className="mr-2 h-3.5 w-3.5" />}
                     {copied ? 'Copied!' : 'Copy address'}
                   </Button>
                   <p className="text-center text-[10px] text-muted-foreground">
@@ -259,9 +234,9 @@ export function HeaderShareQr() {
                 </div>
               )}
 
-              {/* Scan QR */}
+              {/* Scan QR tab */}
               {tab === 'scan' && (
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-3 pb-6">
                   {!scanResult ? (
                     <>
                       <p className="text-center text-xs text-muted-foreground">
@@ -278,19 +253,23 @@ export function HeaderShareQr() {
                           </Button>
                         </div>
                       ) : (
-                        /* Camera viewfinder - aspect-square keeps it 1:1 without inline styles */
-                        <div className="relative aspect-square w-full overflow-hidden rounded-xl border bg-black">
+                        /*
+                          Viewfinder:
+                          - w-full fills the sheet width
+                          - max-h-64 caps height on small phones so buttons
+                            below remain reachable without scrolling
+                          - aspect-video is gentler than aspect-square on
+                            short-screen devices
+                        */
+                        <div className="relative w-full max-h-64 overflow-hidden rounded-xl border bg-black aspect-video">
                           <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
 
-                          {/* Scan overlay */}
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                            <div className="relative h-44 w-44">
-                              {/* Corner brackets */}
-                              <span className="absolute left-0 top-0 h-8 w-8 rounded-tl-md border-l-2 border-t-2 border-white/90" />
-                              <span className="absolute right-0 top-0 h-8 w-8 rounded-tr-md border-r-2 border-t-2 border-white/90" />
-                              <span className="absolute bottom-0 left-0 h-8 w-8 rounded-bl-md border-b-2 border-l-2 border-white/90" />
-                              <span className="absolute bottom-0 right-0 h-8 w-8 rounded-br-md border-b-2 border-r-2 border-white/90" />
-                              {/* Scan line - sweeps top to bottom */}
+                            <div className="relative h-36 w-36">
+                              <span className="absolute left-0 top-0 h-7 w-7 rounded-tl-md border-l-2 border-t-2 border-white/90" />
+                              <span className="absolute right-0 top-0 h-7 w-7 rounded-tr-md border-r-2 border-t-2 border-white/90" />
+                              <span className="absolute bottom-0 left-0 h-7 w-7 rounded-bl-md border-b-2 border-l-2 border-white/90" />
+                              <span className="absolute bottom-0 right-0 h-7 w-7 rounded-br-md border-b-2 border-r-2 border-white/90" />
                               {scanning && (
                                 <span className="absolute inset-x-3 h-0.5 animate-scan-line rounded-full bg-green-400 drop-shadow-[0_0_6px_rgba(74,222,128,0.8)]" />
                               )}
@@ -305,7 +284,6 @@ export function HeaderShareQr() {
                         </div>
                       )}
 
-                      {/* File-input fallback */}
                       <label className="w-full cursor-pointer">
                         <div className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted active:bg-muted">
                           <Camera className="h-3.5 w-3.5 shrink-0" />
@@ -317,7 +295,6 @@ export function HeaderShareQr() {
                       <canvas ref={canvasRef} className="hidden" />
                     </>
                   ) : (
-                    /* Result screen */
                     <div className="flex w-full flex-col items-center gap-3">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10">
                         <Check className="h-6 w-6 text-green-500" />
