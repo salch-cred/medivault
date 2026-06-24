@@ -15,7 +15,12 @@ export function parseNumeric(value: string): number | null {
 export function parseRange(range: string): { low?: number; high?: number } {
   if (!range) return {}
   const cleaned = range.replace(/,/g, '')
-  const between = cleaned.match(/(-?\d+(?:\.\d+)?)\s*[-\u2013\u2014to]+\s*(-?\d+(?:\.\d+)?)/i)
+  // FIX: `to` is now a word-boundary alternative, not loose chars in a
+  // character class. Previously `[-\u2013\u2014to]+` treated `t` and `o` as
+  // individual separator characters, so `10oo20` or `10tt20` would match.
+  const between = cleaned.match(
+    /(-?\d+(?:\.\d+)?)\s*(?:[-\u2013\u2014]|\bto\b)\s*(-?\d+(?:\.\d+)?)/i,
+  )
   if (between) return { low: parseFloat(between[1]), high: parseFloat(between[2]) }
   const lt = cleaned.match(/[<\u2264]\s*(-?\d+(?:\.\d+)?)/)
   if (lt) return { high: parseFloat(lt[1]) }

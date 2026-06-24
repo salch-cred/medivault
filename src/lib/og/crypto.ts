@@ -147,8 +147,30 @@ export async function recordKey(
   return deriveRecordKey(masterKey, salt)
 }
 
+/**
+ * Decode a hex string to raw bytes.
+ *
+ * FIX: validates even-length hex and throws a clear, actionable error for
+n * odd-length or corrupted strings instead of silently truncating the last
+ * nibble, which produced a 15-byte salt and a cryptic downstream
+ * "salt must be 16 bytes" error.
+ */
 function hexToBytes(hex: string): Uint8Array {
   const h = hex.startsWith('0x') ? hex.slice(2) : hex
+  if (h.length === 0) {
+    throw new Error('recordKeySalt is empty — expected 16 bytes of hex')
+  }
+  if (h.length % 2 !== 0) {
+    throw new Error(
+      `recordKeySalt has odd-length hex (${h.length} chars) — expected 32 hex chars (16 bytes). ` +
+      'The salt may be corrupted or truncated.',
+    )
+  }
+  if (!/^[0-9a-fA-F]+$/.test(h)) {
+    throw new Error(
+      'recordKeySalt contains non-hexadecimal characters — the salt may be corrupted.',
+    )
+  }
   const bytes = new Uint8Array(h.length / 2)
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(h.substr(i * 2, 2), 16)
