@@ -14,6 +14,9 @@ export const dynamic = 'force-dynamic'
 // primary key holds a tiny JSON manifest ({ __chunks: n }) and each chunk lives
 // at `<key>_<i>`. GET transparently reassembles either shape and still
 // understands the older single-value format for back-compat.
+//
+// Chunk reads and writes are parallelised with Promise.all to cut round-trip
+// latency from O(n) sequential fetches to O(1).
 
 const KV_BASE = 'https://keyvalue.immanuel.co/api/KeyVal'
 const KV_NS = 'p0vd5ml2'
@@ -69,7 +72,7 @@ export async function GET(req: Request) {
     const primary = await kvGet(envKey(hash))
     const parsedPrimary = decodeHexToJson(primary)
 
-    // Chunked manifest: reassemble each chunk in order.
+    // Chunked manifest: fetch all chunks in parallel, then reassemble in order.
     if (
       parsedPrimary &&
       typeof parsedPrimary === 'object' &&
@@ -77,12 +80,12 @@ export async function GET(req: Request) {
     ) {
       const n = (parsedPrimary as { __chunks: number }).__chunks
       if (!Number.isInteger(n) || n < 1 || n > MAX_CHUNKS) return NextResponse.json({})
-      let hex = ''
-      for (let i = 0; i < n; i++) {
-        const part = await kvGet(`${envKey(hash)}_${i}`)
-        if (!part) return NextResponse.json({})
-        hex += part
-      }
+
+      const parts = await Promise.all(
+        Array.from({ length: n }, (_, i) => kvGet(`${envKey(hash)}_${i}`)),
+      )
+      if (parts.some((p) => !p)) return NextResponse.json({})
+      const hex = parts.join('')
       const envelope = decodeHexToJson(hex)
       if (!envelope || typeof envelope !== 'object') return NextResponse.json({})
       return NextResponse.json({ envelope })
@@ -118,7 +121,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true })
     }
 
-    // Too big for one value: split into fixed-size chunks plus a manifest.
+    // Too big for one value: split into fixed-size chunks.
     const chunks: string[] = []
     for (let i = 0; i < hex.length; i += CHUNK_CHARS) {
       chunks.push(hex.slice(i, i + CHUNK_CHARS))
@@ -126,10 +129,10 @@ export async function POST(req: Request) {
     if (chunks.length > MAX_CHUNKS) {
       return NextResponse.json({ skipped: true, reason: 'too_large' })
     }
-    for (let i = 0; i < chunks.length; i++) {
-      await kvPut(`${envKey(hash)}_${i}`, chunks[i])
-    }
-    // Write the manifest LAST so a reader never sees a partial set of chunks.
+
+    // Write all chunks in parallel, then write the manifest LAST so a reader
+    // never observes a partial chunk set.
+    await Promise.all(chunks.map((chunk, i) => kvPut(`${envKey(hash)}_${i}`, chunk)))
     const manifestHex = Buffer.from(JSON.stringify({ __chunks: chunks.length })).toString('hex')
     await kvPut(envKey(hash), manifestHex)
 
