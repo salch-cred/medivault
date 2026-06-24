@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils'
 
 type Tab = 'my-qr' | 'scan'
 
-// BarcodeDetector is Chrome/Android only — not available on iOS Safari
 declare class BarcodeDetector {
   constructor(options?: { formats: string[] })
   detect(
@@ -21,7 +20,6 @@ declare class BarcodeDetector {
 
 const hasBarcodeDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window
 
-/** Scan a single frame from a <video> using jsQR (works on all browsers). */
 async function scanFrameWithJsQr(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
@@ -33,7 +31,6 @@ async function scanFrameWithJsQr(
   if (!ctx) return null
   ctx.drawImage(video, 0, 0)
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  // Lazy-load jsQR so it doesn’t bloat the initial bundle
   const { default: jsQR } = await import('jsqr')
   const code = jsQR(imageData.data, imageData.width, imageData.height, {
     inversionAttempts: 'dontInvert',
@@ -43,10 +40,13 @@ async function scanFrameWithJsQr(
 
 export function HeaderShareQr() {
   const { address } = useVault()
+
+  // ----------------------------------------------------------------
+  // ALL hooks must be declared unconditionally before any early return
+  // ----------------------------------------------------------------
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [tab, setTab] = useState<Tab>('my-qr')
-
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -54,25 +54,6 @@ export function HeaderShareQr() {
   const [scanResult, setScanResult] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
-
-  if (!address) return null
-
-  const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`
-
-  const copyAddr = useCallback(
-    async (addr?: string) => {
-      const toCopy = addr ?? address
-      await navigator.clipboard.writeText(toCopy)
-      setCopied(true)
-      toast.success('Address copied!', {
-        description: addr
-          ? 'Scanned address is on your clipboard.'
-          : 'Share this so others can send you records.',
-      })
-      setTimeout(() => setCopied(false), 2000)
-    },
-    [address],
-  )
 
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(rafRef.current)
@@ -89,6 +70,22 @@ export function HeaderShareQr() {
     setTab('my-qr')
   }, [stopCamera])
 
+  const copyAddr = useCallback(
+    async (addr?: string) => {
+      if (!address) return
+      const toCopy = addr ?? address
+      await navigator.clipboard.writeText(toCopy)
+      setCopied(true)
+      toast.success('Address copied!', {
+        description: addr
+          ? 'Scanned address is on your clipboard.'
+          : 'Share this so others can send you records.',
+      })
+      setTimeout(() => setCopied(false), 2000)
+    },
+    [address],
+  )
+
   const startScanner = useCallback(async () => {
     setScanResult(null)
     setCameraError(null)
@@ -102,14 +99,12 @@ export function HeaderShareQr() {
       const video = videoRef.current
       if (!video) { stopCamera(); return }
       video.srcObject = stream
-      // playsInline + muted required for iOS autoplay
       video.setAttribute('playsinline', 'true')
       video.muted = true
       await video.play()
       setScanning(true)
 
       if (hasBarcodeDetector) {
-        // ---- Chrome / Android path — native BarcodeDetector ----
         const detector = new BarcodeDetector({ formats: ['qr_code'] })
         const tick = async () => {
           if (!streamRef.current) return
@@ -120,7 +115,7 @@ export function HeaderShareQr() {
               setScanResult(result)
               stopCamera()
               toast.success('QR scanned!', {
-                description: result.length > 40 ? result.slice(0, 40) + '…' : result,
+                description: result.length > 40 ? result.slice(0, 40) + '\u2026' : result,
               })
               return
             }
@@ -129,11 +124,8 @@ export function HeaderShareQr() {
         }
         rafRef.current = requestAnimationFrame(tick)
       } else {
-        // ---- iOS Safari / Firefox path — jsQR canvas loop ----
         const canvas = canvasRef.current
         if (!canvas) return
-
-        // Scan every ~150 ms to keep CPU sane on mobile
         let lastScan = 0
         const tick = async (ts: number) => {
           if (!streamRef.current) return
@@ -145,7 +137,7 @@ export function HeaderShareQr() {
                 setScanResult(result)
                 stopCamera()
                 toast.success('QR scanned!', {
-                  description: result.length > 40 ? result.slice(0, 40) + '…' : result,
+                  description: result.length > 40 ? result.slice(0, 40) + '\u2026' : result,
                 })
                 return
               }
@@ -173,28 +165,18 @@ export function HeaderShareQr() {
     return () => stopCamera()
   }, [tab, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Decode a QR from a user-picked image file — works on all platforms. */
-  const handleFileCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileCapture = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
     const bitmap = await createImageBitmap(file)
-
-    // Try native BarcodeDetector first (fast on Android)
     if (hasBarcodeDetector) {
       try {
         const detector = new BarcodeDetector({ formats: ['qr_code'] })
         const hits = await detector.detect(bitmap)
-        if (hits.length > 0) {
-          setScanResult(hits[0].rawValue)
-          stopCamera()
-          toast.success('QR decoded!')
-          return
-        }
+        if (hits.length > 0) { setScanResult(hits[0].rawValue); stopCamera(); toast.success('QR decoded!'); return }
       } catch { /* fall through to jsQR */ }
     }
-
-    // jsQR fallback (iOS Safari, Firefox, etc.)
     const canvas = canvasRef.current
     if (canvas) {
       canvas.width = bitmap.width
@@ -205,21 +187,20 @@ export function HeaderShareQr() {
         const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
         try {
           const { default: jsQR } = await import('jsqr')
-          const code = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: 'dontInvert',
-          })
-          if (code?.data) {
-            setScanResult(code.data)
-            stopCamera()
-            toast.success('QR decoded!')
-            return
-          }
+          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' })
+          if (code?.data) { setScanResult(code.data); stopCamera(); toast.success('QR decoded!'); return }
         } catch { /* fall through */ }
       }
     }
+    toast.error('No QR code found \u2014 try a clearer image or move closer.')
+  }, [stopCamera])
 
-    toast.error('No QR code found — try a clearer image or move closer.')
-  }
+  // ----------------------------------------------------------------
+  // Early return AFTER all hooks — safe, no hook-count mismatch
+  // ----------------------------------------------------------------
+  if (!address) return null
+
+  const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`
 
   return (
     <>
@@ -241,10 +222,8 @@ export function HeaderShareQr() {
             className="relative w-full overflow-y-auto rounded-t-2xl border-t border-x border-border bg-background shadow-2xl max-h-[90dvh] sm:mx-auto sm:mb-6 sm:max-w-sm sm:rounded-2xl sm:border"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Drag handle */}
             <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-border" />
 
-            {/* Header */}
             <div className="flex items-center justify-between px-5 pb-3 pt-3">
               <h3 className="text-base font-bold">MediVault ID</h3>
               <button
@@ -257,7 +236,6 @@ export function HeaderShareQr() {
               </button>
             </div>
 
-            {/* Tab switcher */}
             <div className="mx-5 mb-4 flex rounded-xl bg-muted p-1">
               {(
                 [
@@ -282,10 +260,7 @@ export function HeaderShareQr() {
               ))}
             </div>
 
-            {/* Content */}
             <div className="px-5 pb-safe">
-
-              {/* My QR tab */}
               {tab === 'my-qr' && (
                 <div className="flex flex-col items-center gap-4 pb-6">
                   <p className="text-center text-xs text-muted-foreground">
@@ -294,9 +269,7 @@ export function HeaderShareQr() {
                   <div className="rounded-xl border bg-white p-3">
                     <QRCodeSVG value={address} size={200} level="M" bgColor="#ffffff" fgColor="#000000" />
                   </div>
-                  <p className="break-all text-center font-mono text-xs text-muted-foreground">
-                    {address}
-                  </p>
+                  <p className="break-all text-center font-mono text-xs text-muted-foreground">{address}</p>
                   <Button className="w-full" size="sm" onClick={() => copyAddr()}>
                     {copied ? <Check className="mr-2 h-3.5 w-3.5" /> : <Copy className="mr-2 h-3.5 w-3.5" />}
                     {copied ? 'Copied!' : 'Copy address'}
@@ -307,7 +280,6 @@ export function HeaderShareQr() {
                 </div>
               )}
 
-              {/* Scan QR tab */}
               {tab === 'scan' && (
                 <div className="flex flex-col items-center gap-3 pb-6">
                   {!scanResult ? (
@@ -315,7 +287,6 @@ export function HeaderShareQr() {
                       <p className="text-center text-xs text-muted-foreground">
                         Point camera at a MediVault address QR
                       </p>
-
                       {cameraError ? (
                         <div className="w-full rounded-xl border border-destructive/30 bg-destructive/5 p-5 text-center">
                           <Camera className="mx-auto mb-2 h-8 w-8 text-destructive/50" />
@@ -327,17 +298,8 @@ export function HeaderShareQr() {
                         </div>
                       ) : (
                         <div className="relative w-full max-h-64 overflow-hidden rounded-xl border bg-black aspect-video">
-                          {/* hidden canvas used for jsQR frame scanning */}
                           <canvas ref={canvasRef} className="hidden" />
-                          <video
-                            ref={videoRef}
-                            className="h-full w-full object-cover"
-                            muted
-                            playsInline
-                            autoPlay
-                          />
-
-                          {/* Corner viewfinder */}
+                          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                             <div className="relative h-36 w-36">
                               <span className="absolute left-0 top-0 h-7 w-7 rounded-tl-md border-l-2 border-t-2 border-white/90" />
@@ -349,16 +311,13 @@ export function HeaderShareQr() {
                               )}
                             </div>
                           </div>
-
                           {!scanning && !cameraError && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                              <p className="text-xs text-white/60">Starting camera…</p>
+                              <p className="text-xs text-white/60">Starting camera\u2026</p>
                             </div>
                           )}
                         </div>
                       )}
-
-                      {/* Photo picker — primary option on iOS since BarcodeDetector is unavailable */}
                       <label className="w-full cursor-pointer">
                         <div className={cn(
                           'flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs transition-colors hover:bg-muted active:bg-muted',
@@ -371,15 +330,8 @@ export function HeaderShareQr() {
                             ? 'Take photo or choose from camera roll'
                             : 'Scan from photo / image file'}
                         </div>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          className="sr-only"
-                          onChange={handleFileCapture}
-                        />
+                        <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={handleFileCapture} />
                       </label>
-
                       {!hasBarcodeDetector && !cameraError && (
                         <p className="text-center text-[10px] text-muted-foreground">
                           Live scanning uses the camera above. On iOS, tap the button to use your camera roll instead.
@@ -396,14 +348,11 @@ export function HeaderShareQr() {
                         <p className="break-all font-mono text-xs text-foreground">{scanResult}</p>
                       </div>
                       <div className="flex w-full gap-2">
-                        <Button className="flex-1" size="sm" onClick={() => copyAddr(scanResult)}>
+                        <Button className="flex-1" size="sm" onClick={() => copyAddr(scanResult ?? undefined)}>
                           {copied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />}
                           {copied ? 'Copied!' : 'Copy'}
                         </Button>
-                        <Button
-                          variant="secondary" size="sm" className="flex-1"
-                          onClick={() => { setScanResult(null); void startScanner() }}
-                        >
+                        <Button variant="secondary" size="sm" className="flex-1" onClick={() => { setScanResult(null); void startScanner() }}>
                           <ScanLine className="mr-1.5 h-3.5 w-3.5" />
                           Scan again
                         </Button>
