@@ -15,22 +15,25 @@ export function WalletConnect() {
 
   if (status === 'connected' && address) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="hidden rounded-full bg-secondary px-3 py-1.5 font-mono text-xs sm:inline">
+      <button
+        onClick={() => open()}
+        title="Wallet settings"
+        className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 transition-colors hover:bg-secondary/80 active:scale-95"
+      >
+        {/* Shorter hash on xs, longer from sm up */}
+        <Wallet className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-mono text-xs sm:hidden">
+          {shortHash(address, 4, 3)}
+        </span>
+        <span className="hidden font-mono text-xs sm:inline">
           {shortHash(address, 6, 4)}
         </span>
-        <Button variant="ghost" size="icon" onClick={() => open()} title="Wallet settings">
-          <Wallet className="h-4 w-4" />
-        </Button>
-      </div>
+      </button>
     )
   }
 
-  // WalletConnect may already be restored after a browser refresh while the
-  // encrypted vault is still locked. In that state, do not ask the user to
-  // reconnect the wallet; ask them to unlock the vault with a fresh signature.
-  // This preserves security because the vault key is re-derived in memory and
-  // never persisted across refreshes.
+  // Wallet is already connected by Web3Modal (e.g. after a refresh) but the
+  // vault key hasn't been derived yet — show a compact inline unlock button.
   if (address && walletProvider) {
     const unlockVault = () => {
       const provider = new BrowserProvider(walletProvider)
@@ -38,21 +41,23 @@ export function WalletConnect() {
     }
 
     return (
-      <div className="flex flex-col items-center gap-2 sm:flex-row">
+      <div className="flex items-center gap-1.5">
         <Button
           onClick={unlockVault}
           disabled={status === 'connecting'}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
+          size="sm"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-xs"
         >
           {status === 'connecting' ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
           ) : (
-            <KeyRound className="h-4 w-4 mr-2" />
+            <KeyRound className="h-3.5 w-3.5 mr-1.5" />
           )}
-          {status === 'connecting' ? 'Unlocking…' : 'Unlock vault'}
+          <span className="sm:hidden">{status === 'connecting' ? 'Unlocking…' : 'Unlock'}</span>
+          <span className="hidden sm:inline">{status === 'connecting' ? 'Unlocking…' : 'Unlock vault'}</span>
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => open()}>
-          Wallet settings
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => open()} title="Wallet settings">
+          <Wallet className="h-3.5 w-3.5" />
         </Button>
       </div>
     )
@@ -62,14 +67,16 @@ export function WalletConnect() {
     <Button
       onClick={() => open()}
       disabled={status === 'connecting'}
-      className="bg-primary text-primary-foreground hover:bg-primary/90"
+      size="sm"
+      className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
     >
       {status === 'connecting' ? (
-        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
       ) : (
-        <Wallet className="h-4 w-4 mr-2" />
+        <Wallet className="h-3.5 w-3.5 mr-1.5" />
       )}
-      {status === 'connecting' ? 'Connecting…' : 'Connect wallet'}
+      <span className="sm:hidden">{status === 'connecting' ? 'Connecting…' : 'Connect'}</span>
+      <span className="hidden sm:inline">{status === 'connecting' ? 'Connecting…' : 'Connect wallet'}</span>
     </Button>
   )
 }
