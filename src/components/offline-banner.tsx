@@ -8,9 +8,7 @@ export function OfflineBanner() {
   const [online, setOnline] = useState(true)
 
   useEffect(() => {
-    // Sync with the real browser state on first render.
     setOnline(navigator.onLine)
-
     const handleOnline = () => setOnline(true)
     const handleOffline = () => setOnline(false)
     window.addEventListener('online', handleOnline)
@@ -38,7 +36,7 @@ export function OfflineBanner() {
             aria-live="polite"
           >
             <WifiOff className="h-3.5 w-3.5 shrink-0" />
-            You’re offline — your encrypted records are still accessible from local cache.
+            You&apos;re offline — your encrypted records are still accessible from local cache.
           </div>
         </motion.div>
       )}
