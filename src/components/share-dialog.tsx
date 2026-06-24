@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 import { Share2, Loader2, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
@@ -21,6 +21,8 @@ import { storageScanUrl } from '@/lib/og/config'
 import { eciesEncrypt } from '@/lib/og/ecies'
 import { buildAuthHeader } from '@/lib/client/auth'
 import type { ExtractionResult, RecordMeta } from '@/lib/og/types'
+
+const SENDER_NAME_KEY = 'medivault_sender_name'
 
 export function ShareDialog({
   meta,
@@ -43,17 +45,32 @@ export function ShareDialog({
   const [shareHash, setShareHash] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Restore last-used sender name from localStorage on mount.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SENDER_NAME_KEY)
+      if (saved) setSenderName(saved)
+    } catch {}
+  }, [])
+
+  function handleSenderNameChange(value: string) {
+    setSenderName(value)
+    try {
+      if (value.trim()) {
+        localStorage.setItem(SENDER_NAME_KEY, value.trim())
+      } else {
+        localStorage.removeItem(SENDER_NAME_KEY)
+      }
+    } catch {}
+  }
+
   async function ensureOriginalIsDurable(): Promise<boolean> {
     if (!storage || !meta.rootHash) return false
 
-    // If this session already marked the record as stored, avoid an unnecessary
-    // 0G proof/read check and proceed immediately.
     if (uploadStatus[meta.id] === 'stored') return true
 
     toast.message('Checking that the original file is ready on 0G…')
 
-    // First, try to prove the root is already retrievable. This covers refreshed
-    // sessions where local uploadStatus is empty but the record is durable.
     try {
       const ok = await storage.verifyIntegrity(meta.rootHash, undefined, {
         expectExists: true,
@@ -63,10 +80,6 @@ export function ShareDialog({
       console.warn('0G readiness check failed before share:', verifyErr)
     }
 
-    // If not yet retrievable, finish the pending backup from the locally cached
-    // original bytes. backupRecord returns false if the original bytes are no
-    // longer in memory, in which case the user should re-upload/open the file
-    // before sharing.
     toast.message('Finishing the 0G backup before sharing…')
     return backupRecord(meta)
   }
@@ -192,9 +205,6 @@ export function ShareDialog({
 
       setShareHash(rootHash)
 
-      // Record an immutable, hash-chained consent event in the owner's
-      // 0G-backed access ledger. Fire-and-forget: it must never block or fail
-      // the share itself. Only meaningful when sharing to a wallet address.
       if (targetDoc.startsWith('0x') && targetDoc.length === 42) {
         void fetch('/api/og/ledger', {
           method: 'POST',
@@ -244,7 +254,7 @@ export function ShareDialog({
               id="senderName"
               placeholder="e.g., Maria Khan"
               value={senderName}
-              onChange={(e) => setSenderName(e.target.value)}
+              onChange={(e) => handleSenderNameChange(e.target.value)}
             />
           </div>
           <div className="space-y-2">
