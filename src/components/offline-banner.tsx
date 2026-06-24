@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react'
 import { WifiOff } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+const ANIM_INITIAL = { height: 0, opacity: 0 }
+const ANIM_ANIMATE = { height: 'auto' as const, opacity: 1 }
+const ANIM_EXIT = { height: 0, opacity: 0 }
+const ANIM_TRANSITION = { duration: 0.2 }
+
 export function OfflineBanner() {
   const [online, setOnline] = useState(true)
 
@@ -24,10 +29,10 @@ export function OfflineBanner() {
       {!online && (
         <motion.div
           key="offline-banner"
-          initial= height: 0, opacity: 0 
-          animate= height: 'auto', opacity: 1 
-          exit= height: 0, opacity: 0 
-          transition= duration: 0.2 
+          initial={ANIM_INITIAL}
+          animate={ANIM_ANIMATE}
+          exit={ANIM_EXIT}
+          transition={ANIM_TRANSITION}
           className="overflow-hidden"
         >
           <div
