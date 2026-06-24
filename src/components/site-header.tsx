@@ -24,22 +24,21 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/90 backdrop-blur-xl transition-all shadow-sm pt-safe">
       <div className="container flex h-14 items-center justify-between gap-3 md:h-16">
-        <div className="flex items-center gap-2">
-          <Link href="/" className="flex items-center gap-2 font-bold group md:hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="MediVault logo"
-              className="h-8 w-8 rounded-xl shadow-md transition-transform group-active:scale-95 md:h-9 md:w-9"
-            />
-            {/* Brand always visible on mobile (it's the only nav cue up top). */}
-            <span className="inline-block text-base tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent md:text-lg">
-              MediVault
-            </span>
-          </Link>
-          {/* Quick scannable QR of the user's sharing address (mobile/tablet). */}
-          <HeaderShareQr />
-        </div>
+
+        {/* Left — logo + brand (mobile only; desktop uses sidebar) */}
+        <Link href="/" className="flex items-center gap-2 font-bold group md:hidden shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="MediVault logo"
+            className="h-8 w-8 rounded-xl shadow-md transition-transform group-active:scale-95"
+          />
+          <span className="inline-block text-base tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
+            MediVault
+          </span>
+        </Link>
+
+        {/* Centre — desktop nav */}
         <nav className="hidden items-center gap-1.5 lg:flex">
           {NAV.map((item) => {
             const isActive = pathname === item.href
@@ -62,15 +61,23 @@ export function SiteHeader() {
                     transition={springSnappy}
                   />
                 )}
-                <Icon className={cn("h-4 w-4 relative z-10 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover/nav:text-foreground")} />
+                <Icon className={cn('h-4 w-4 relative z-10 transition-colors', isActive ? 'text-primary' : 'text-muted-foreground group-hover/nav:text-foreground')} />
                 <span className="relative z-10">{item.label}</span>
               </Link>
             )
           })}
         </nav>
-        <div className="flex items-center gap-2 md:gap-4">
+
+        {/*
+          Right — QR button + wallet address.
+          QR lives here (not left) so it sits right next to the wallet
+          identity pill — makes spatial sense and keeps the left side clean.
+        */}
+        <div className="flex items-center gap-2">
+          <HeaderShareQr />
           <WalletConnect />
         </div>
+
       </div>
     </header>
   )
