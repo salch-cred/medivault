@@ -42,7 +42,6 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/jsqr": "^1.4.1",
     "@types/node": "^20.16.11",
     "@types/pdf-parse": "^1.1.4",
     "@types/react": "^18.3.11",
