@@ -1,14 +1,10 @@
 import { NextResponse } from 'next/server'
 import { verifyAuth, checkRateLimit } from '@/lib/server/auth'
 
-// Edge runtime: near-zero cold start for this small JSON-RPC control-plane
-// proxy (chain reads, gas price, nonce, tx submit), shaving latency off every
-// upload round trip.
 export const runtime = 'edge'
 
 const OG_MAINNET_RPC = 'https://evmrpc.0g.ai'
 
-// Allowed JSON-RPC methods for this proxy (read-only control plane operations).
 const ALLOWED_METHODS = new Set([
   'eth_chainId',
   'eth_blockNumber',
@@ -28,11 +24,6 @@ const ALLOWED_METHODS = new Set([
   'eth_getBlockByHash',
 ])
 
-// Read-only methods that are safe to expose without auth. The 0G SDK makes
-// internal fetch() calls to this proxy during upload() and downloadToBlob()
-// that cannot be modified to include auth headers. These methods are all
-// benign reads — an attacker gains nothing from calling them.
-// Write methods (eth_sendRawTransaction) are NOT in ALLOWED_METHODS at all.
 const UNAUTHED_READ_METHODS = new Set([
   'eth_chainId',
   'eth_blockNumber',
@@ -52,7 +43,43 @@ const UNAUTHED_READ_METHODS = new Set([
 ])
 
 const MAX_BATCH_SIZE = 10
-const MAX_BODY_BYTES = 32 * 1024 // 32 KB — JSON-RPC payloads should be small
+const MAX_BODY_BYTES = 32 * 1024
+// FIX: bound eth_getLogs queries to prevent upstream bandwidth exhaustion.
+// An unbounded log query (no fromBlock/toBlock) can scan the entire 0G chain
+// and return MB of data, causing upstream timeouts and OOM on the proxy.
+const MAX_LOG_BLOCK_RANGE = 10_000
+
+/**
+ * Validate eth_getLogs params to ensure a bounded block range is specified.
+ * Returns an error string if validation fails, or null if params are safe.
+ */
+function validateGetLogsParams(params: unknown): string | null {
+  if (!Array.isArray(params) || params.length === 0) {
+    return 'eth_getLogs requires a filter object parameter'
+  }
+  const filter = params[0] as Record<string, unknown>
+  if (!filter || typeof filter !== 'object') {
+    return 'eth_getLogs filter must be an object'
+  }
+  // Both fromBlock and toBlock must be present as hex strings or 'latest'
+  const { fromBlock, toBlock } = filter
+  if (!fromBlock || !toBlock) {
+    return 'eth_getLogs requires both fromBlock and toBlock to prevent unbounded scans'
+  }
+  // Allow 'latest' only for toBlock (fromBlock must be a specific block)
+  if (typeof fromBlock !== 'string' || typeof toBlock !== 'string') {
+    return 'eth_getLogs fromBlock and toBlock must be strings'
+  }
+  // If both are hex block numbers, enforce the range window
+  if (fromBlock.startsWith('0x') && toBlock.startsWith('0x')) {
+    const from = parseInt(fromBlock, 16)
+    const to = parseInt(toBlock, 16)
+    if (!isNaN(from) && !isNaN(to) && to - from > MAX_LOG_BLOCK_RANGE) {
+      return `eth_getLogs block range exceeds maximum of ${MAX_LOG_BLOCK_RANGE} blocks`
+    }
+  }
+  return null
+}
 
 export async function POST(req: Request) {
   try {
@@ -73,25 +100,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Batch too large.' }, { status: 400 })
     }
 
-    // Validate methods and determine if auth is needed.
     let needsAuth = false
     for (const r of requests) {
-      const method = (r as Record<string, unknown>)?.method
+      const rr = r as Record<string, unknown>
+      const method = rr?.method
       if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
-        return NextResponse.json(
-          { error: 'Method not allowed.' },
-          { status: 403 },
-        )
+        return NextResponse.json({ error: 'Method not allowed.' }, { status: 403 })
       }
       if (!UNAUTHED_READ_METHODS.has(method)) {
         needsAuth = true
       }
+      // FIX: validate eth_getLogs params to enforce a bounded block range.
+      if (method === 'eth_getLogs') {
+        const err = validateGetLogsParams(rr.params)
+        if (err) {
+          return NextResponse.json({ error: err }, { status: 400 })
+        }
+      }
     }
 
-    // Only require auth for eth_getLogs (could be used for data exfiltration).
-    // All other allowed methods are read-only and safe to expose without auth
-    // since the 0G SDK makes internal calls that can't carry auth headers.
-    // Write methods (eth_sendRawTransaction) are NOT in ALLOWED_METHODS at all.
     if (needsAuth) {
       const auth = verifyAuth(req)
       if (!auth.ok) return auth.response
@@ -101,12 +128,9 @@ export async function POST(req: Request) {
       }
     }
 
-    // Forward to 0G Mainnet RPC (chain 16661).
     const response = await fetch(OG_MAINNET_RPC, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: bodyText,
     })
 

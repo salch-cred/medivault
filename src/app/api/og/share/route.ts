@@ -10,6 +10,13 @@ const ROOT_RE = /^0x[0-9a-fA-F]{64}$/
 const MAX_TITLE = 160
 const MAX_NAME = 80
 const MAX_DOCTYPE = 64
+// FIX: cap the `date` field length. Previously `typeof date === 'string'` with
+// no length limit allowed an attacker to stuff a multi-KB string into the
+// date slot, which grew the KV payload and appeared in the recipient's UI.
+const MAX_DATE = 30 // ISO 8601 dates are at most 29 chars
+// FIX: cap the total number of shares per recipient to prevent unbounded KV
+// payload growth. Oldest entries are dropped when the cap is exceeded.
+const MAX_SHARES = 500
 
 function sharesKey(address: string): string {
   return `shares_${address.toLowerCase()}`
@@ -19,7 +26,7 @@ function cleanString(v: unknown, max: number): string {
   return typeof v === 'string' ? v.slice(0, max) : ''
 }
 
-async function getPersistentShares(address: string): Promise<any[]> {
+async function getPersistentShares(address: string): Promise<unknown[]> {
   try {
     const res = await fetch(`${KV_BASE}/GetValue/${KV_NS}/${sharesKey(address)}`)
     if (!res.ok) return []
@@ -36,7 +43,7 @@ async function getPersistentShares(address: string): Promise<any[]> {
   }
 }
 
-async function savePersistentShares(address: string, shares: any[]): Promise<void> {
+async function savePersistentShares(address: string, shares: unknown[]): Promise<void> {
   const hex = Buffer.from(JSON.stringify(shares)).toString('hex')
   await fetch(`${KV_BASE}/UpdateValue/${KV_NS}/${sharesKey(address)}/${hex}`, { method: 'POST' })
 }
@@ -55,8 +62,9 @@ export async function GET(req: Request) {
 
     const sharedRecords = await getPersistentShares(address)
     return NextResponse.json(sharedRecords)
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
@@ -98,17 +106,23 @@ export async function POST(req: Request) {
       senderAddress: ethers.getAddress(senderAddress).toLowerCase(),
       title: cleanString(title, MAX_TITLE),
       docType: cleanString(docType, MAX_DOCTYPE),
-      date: typeof date === 'string' || date === null ? date : null,
+      // FIX: cap date string length to prevent multi-KB date injections.
+      date: typeof date === 'string' ? date.slice(0, MAX_DATE) : null,
       sharedAt: typeof sharedAt === 'string' ? sharedAt : new Date().toISOString(),
       rootHash: rootHash.toLowerCase(),
     }
 
     const existingShares = await getPersistentShares(recipientAddrLower)
-    const updatedShares = [...existingShares.filter((s) => s.rootHash !== newEntry.rootHash), newEntry]
+    // FIX: cap total list size at MAX_SHARES; drop oldest entries when exceeded.
+    const deduped = (existingShares as { rootHash?: string }[]).filter(
+      (s) => s.rootHash !== newEntry.rootHash,
+    )
+    const updatedShares = [...deduped, newEntry].slice(-MAX_SHARES)
     await savePersistentShares(recipientAddrLower, updatedShares)
 
     return NextResponse.json({ success: true, record: newEntry })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
