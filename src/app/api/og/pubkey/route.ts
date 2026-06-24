@@ -8,32 +8,87 @@ const KV_BASE = 'https://keyvalue.immanuel.co/api/KeyVal'
 const KV_NS = 'p0vd5ml2'
 
 // ---------------------------------------------------------------------------
-// In-process rate limiter for pubkey GET: max 30 lookups per IP per minute.
-// This prevents authenticated users from bulk-enumerating all registered keys.
+// Hybrid rate limiter for pubkey GET: max 30 lookups per IP per minute.
+//
+// L1 - in-process Map: zero-latency fast path, reset on cold start.
+// L2 - KV store: persists bucket state across instances and cold starts.
+//      Only consulted on first request after a cold start (L1 miss), so the
+//      extra round-trip is paid at most once per warm-up, not per request.
 // ---------------------------------------------------------------------------
 const RATE_WINDOW_MS = 60_000
 const RATE_MAX = 30
 
 type RateBucket = { count: number; windowStart: number }
-const rateBuckets = new Map<string, RateBucket>()
+const l1Cache = new Map<string, RateBucket>()
 
-function checkRateLimit(ip: string): boolean {
+function rlKey(ip: string): string {
+  return `rl_pk_${ip.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+}
+
+async function readBucket(ip: string): Promise<RateBucket | null> {
+  try {
+    const res = await fetch(`${KV_BASE}/GetValue/${KV_NS}/${rlKey(ip)}`)
+    if (!res.ok) return null
+    const raw = (await res.text()).replace(/"/g, '').trim()
+    if (!raw) return null
+    return JSON.parse(Buffer.from(raw, 'hex').toString('utf8')) as RateBucket
+  } catch {
+    return null
+  }
+}
+
+async function writeBucket(ip: string, bucket: RateBucket): Promise<void> {
+  try {
+    const hex = Buffer.from(JSON.stringify(bucket)).toString('hex')
+    await fetch(`${KV_BASE}/UpdateValue/${KV_NS}/${rlKey(ip)}/${hex}`, { method: 'POST' })
+  } catch {
+    // Best-effort: never block the main request path.
+  }
+}
+
+async function checkRateLimit(ip: string): Promise<boolean> {
   const now = Date.now()
-  const bucket = rateBuckets.get(ip)
-  if (!bucket || now - bucket.windowStart > RATE_WINDOW_MS) {
-    rateBuckets.set(ip, { count: 1, windowStart: now })
+
+  // L1 fast path (warm instance).
+  const cached = l1Cache.get(ip)
+  if (cached) {
+    if (now - cached.windowStart > RATE_WINDOW_MS) {
+      const fresh: RateBucket = { count: 1, windowStart: now }
+      l1Cache.set(ip, fresh)
+      void writeBucket(ip, fresh)
+      return true
+    }
+    if (cached.count >= RATE_MAX) return false
+    cached.count++
+    void writeBucket(ip, cached)
     return true
   }
-  if (bucket.count >= RATE_MAX) return false
-  bucket.count++
+
+  // L2 cold-start path: load persisted bucket from KV.
+  const kv = await readBucket(ip)
+  if (kv && now - kv.windowStart <= RATE_WINDOW_MS) {
+    if (kv.count >= RATE_MAX) {
+      l1Cache.set(ip, kv)
+      return false
+    }
+    kv.count++
+    l1Cache.set(ip, kv)
+    void writeBucket(ip, kv)
+    return true
+  }
+
+  // No entry or expired window: fresh bucket.
+  const fresh: RateBucket = { count: 1, windowStart: now }
+  l1Cache.set(ip, fresh)
+  void writeBucket(ip, fresh)
   return true
 }
 
-// Evict stale buckets periodically to avoid unbounded Map growth.
+// Evict stale L1 entries periodically.
 setInterval(() => {
   const cutoff = Date.now() - RATE_WINDOW_MS
-  for (const [ip, b] of rateBuckets) {
-    if (b.windowStart < cutoff) rateBuckets.delete(ip)
+  for (const [ip, b] of l1Cache) {
+    if (b.windowStart < cutoff) l1Cache.delete(ip)
   }
 }, RATE_WINDOW_MS)
 
@@ -75,16 +130,16 @@ async function writePubKey(address: string, publicKey: string): Promise<void> {
 export async function GET(req: Request) {
   try {
     // Require authentication to prevent public key oracle attacks.
-    // Only authenticated users can look up another user's public key.
     const auth = verifyAuth(req)
     if (!auth.ok) return auth.response
 
-    // Rate-limit per originating IP to prevent bulk enumeration.
+    // Hybrid rate limit: L1 in-process (warm) + L2 KV-backed (cold start).
     const ip =
       (req.headers as Headers).get('x-forwarded-for')?.split(',')[0].trim() ??
       (req.headers as Headers).get('x-real-ip') ??
       'unknown'
-    if (!checkRateLimit(ip)) {
+    const allowed = await checkRateLimit(ip)
+    if (!allowed) {
       return NextResponse.json(
         { error: 'Too many requests. Please wait a moment before looking up another key.' },
         { status: 429 },
