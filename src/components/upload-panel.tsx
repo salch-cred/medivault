@@ -21,9 +21,9 @@ type Stage = 'idle' | 'parsing' | 'analyzing' | 'encrypting' | 'done'
 
 const STAGE_LABEL: Record<Stage, string> = {
   idle: '',
-  parsing: 'Reading your document\u2026',
-  analyzing: 'AI is explaining it (0G Compute)\u2026',
-  encrypting: 'Encrypting your document\u2026',
+  parsing: 'Reading your document…',
+  analyzing: 'AI is explaining it (0G Compute)…',
+  encrypting: 'Encrypting your document…',
   done: 'Saved to your vault',
 }
 
@@ -65,6 +65,28 @@ function fallbackSummary(file: File, text: string, reason?: unknown): Extraction
   })
 }
 
+/**
+ * Read a File as Uint8Array via FileReader, reporting streaming progress.
+ * Unlike file.arrayBuffer() which blocks silently, this fires onprogress
+ * events so large files show a real read % in the UI.
+ */
+function readFileStreaming(
+  file: File,
+  onProgress: (pct: number) => void,
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer))
+    reader.onerror = () => reject(reader.error ?? new Error('File read failed'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
 export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void }) {
   const { status, address, autoWalletAddress, autoWalletSigner, key, storage, index, language, eli5, addRecord, cacheOriginal, setUploadStatus, autoBackup, signer, records } = useVault()
   const [stage, setStage] = useState<Stage>('idle')
@@ -90,16 +112,21 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
       try {
         setStage('parsing')
-        setPct(10)
-        setDetail('')
+        setPct(5)
+        setDetail('Reading file…')
 
-        // Content-address dedupe: hash the original bytes up-front and skip all
-        // extraction/AI/upload work if this exact document is already saved.
-        const originalBytes = new Uint8Array(await file.arrayBuffer())
+        // Stream-read with per-byte progress so large files show a real %
+        // rather than blocking silently on a single arrayBuffer() call.
+        const originalBytes = await readFileStreaming(file, (p) => {
+          setPct(5 + Math.round(p * 0.1))
+          setDetail(`Reading file… ${p}%`)
+        })
+
+        setDetail('Hashing for deduplication…')
         const contentHash = contentHashHex(originalBytes)
         const duplicate = records.find((r) => r.contentHash && r.contentHash === contentHash)
         if (duplicate) {
-          toast.success('This document is already in your vault \u2014 skipped the duplicate.')
+          toast.success('This document is already in your vault — skipped the duplicate.')
           setStage('idle')
           setPct(0)
           setDetail('')
@@ -109,10 +136,16 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         const auth = await buildAuthHeader(autoWalletSigner, autoWalletAddress)
 
+        setDetail('Extracting text…')
         let text = ''
         let extractionWarning: unknown = null
         try {
-          text = await extractText(file, (_s, p) => p && setPct(Math.min(40, 10 + p * 0.3)), auth)
+          text = await extractText(file, (_s, p) => {
+            if (p) {
+              setPct(Math.min(40, 15 + Math.round(p * 0.25)))
+              setDetail(`Extracting text… ${Math.round(p * 100)}%`)
+            }
+          }, auth)
         } catch (parseErr) {
           extractionWarning = parseErr
           console.warn('Document text extraction failed; continuing with fallback summary:', parseErr)
@@ -124,7 +157,8 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         }
 
         setStage('analyzing')
-        setPct(55)
+        setPct(50)
+        setDetail('Sending to 0G Compute for AI analysis…')
         let summary: ExtractionResult
         try {
           const res = await fetch('/api/ai/extract', {
@@ -141,6 +175,7 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
           }
           const { result } = (await res.json()) as { result: ExtractionResult }
           summary = normalizeExtraction(result)
+          setDetail('AI analysis complete ✓')
         } catch (aiErr) {
           console.warn('AI extraction failed; continuing with fallback summary:', aiErr)
           summary = fallbackSummary(file, text, extractionWarning ?? aiErr)
@@ -148,22 +183,27 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         }
 
         setStage('encrypting')
-        setPct(75)
+        setPct(70)
+        setDetail('Checking 0G wallet balance…')
 
         const provider = await createAuthedProvider(signer, address, ZG.RPC_URL)
         const balance = await provider.getBalance(autoWalletAddress)
         if (balance === 0n) {
-          throw new Error('Insufficient 0G gas! Please click "Fund Auto-Wallet" in the status panel on the right.')
+          throw new Error('Insufficient 0G gas! Please click “Fund Auto-Wallet” in the status panel on the right.')
         }
 
+        setDetail('Deriving encryption key…')
         const salt = newRecordSalt()
         const recKey = await deriveRecordKey(key!, salt)
+
+        setDetail('Encrypting with AES-256-GCM…')
         const summaryBytes = new TextEncoder().encode(JSON.stringify(summary))
         const [filePrep, summaryPrep] = await Promise.all([
           storage!.prepareUpload(file, recKey),
           storage!.prepareUpload(summaryBytes, recKey),
         ])
-        setPct(95)
+        setPct(90)
+        setDetail('Preparing 0G upload…')
 
         const meta: RecordMeta = {
           id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `rec_${Date.now()}`,
@@ -190,8 +230,9 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         setStage('done')
         setPct(100)
-        toast.success('Saved to your vault! \ud83c\udf89', {
-          description: 'Backing up to 0G storage in the background\u2026',
+        setDetail('')
+        toast.success('Saved to your vault! 🎉', {
+          description: 'Backing up to 0G storage in the background…',
         })
         onUploaded?.(meta.id)
         setTimeout(() => {
@@ -202,10 +243,6 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
 
         void (async () => {
           try {
-            // Parallel finalize: document + summary are independent uploads
-            // (different root hashes) — running them concurrently halves the
-            // total 0G backup time. The retry logic in uploadWithRetry handles
-            // any nonce conflicts from concurrent on-chain transactions.
             const [fileResult] = await Promise.all([
               filePrep.finalize(),
               summaryPrep.finalize(),
@@ -213,13 +250,13 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
             await index!.put(meta).catch((e) => console.warn('KV index write failed:', e))
             setUploadStatus(meta.id, 'stored')
             useVault.getState().syncRemoteIndex()
-            toast.success('Backed up to 0G \u2713', {
-              description: fileResult.txHash ? `tx ${fileResult.txHash.slice(0, 10)}\u2026` : 'Stored on 0G decentralized storage',
+            toast.success('Backed up to 0G ✓', {
+              description: fileResult.txHash ? `tx ${fileResult.txHash.slice(0, 10)}…` : 'Stored on 0G decentralized storage',
             })
           } catch (bgErr) {
             console.error('Background 0G backup failed; auto-retrying until it lands:', bgErr)
             setUploadStatus(meta.id, 'pending')
-            toast.message('0G backup is taking a moment \u2014 auto-retrying in the background\u2026')
+            toast.message('0G backup is taking a moment — auto-retrying in the background…')
             void autoBackup(meta)
           }
         })()
@@ -309,8 +346,9 @@ export function UploadPanel({ onUploaded }: { onUploaded?: (id: string) => void 
         </motion.div>
 
         {busy || stage === 'done' ? (
-          <motion.div initial={PROGRESS_INITIAL} animate={PROGRESS_ANIMATE}>
+          <motion.div initial={PROGRESS_INITIAL} animate={PROGRESS_ANIMATE} className="space-y-1">
             <Progress value={pct} />
+            <p className="text-right text-xs tabular-nums text-muted-foreground">{pct}%</p>
           </motion.div>
         ) : null}
 
