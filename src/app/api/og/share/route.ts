@@ -10,12 +10,7 @@ const ROOT_RE = /^0x[0-9a-fA-F]{64}$/
 const MAX_TITLE = 160
 const MAX_NAME = 80
 const MAX_DOCTYPE = 64
-// FIX: cap the `date` field length. Previously `typeof date === 'string'` with
-// no length limit allowed an attacker to stuff a multi-KB string into the
-// date slot, which grew the KV payload and appeared in the recipient's UI.
-const MAX_DATE = 30 // ISO 8601 dates are at most 29 chars
-// FIX: cap the total number of shares per recipient to prevent unbounded KV
-// payload growth. Oldest entries are dropped when the cap is exceeded.
+const MAX_DATE = 30
 const MAX_SHARES = 500
 
 function sharesKey(address: string): string {
@@ -24,6 +19,13 @@ function sharesKey(address: string): string {
 
 function cleanString(v: unknown, max: number): string {
   return typeof v === 'string' ? v.slice(0, max) : ''
+}
+
+/** 4-byte hex nonce to prevent ID collisions on rapid same-millisecond shares. */
+function randomNonce(): string {
+  const buf = new Uint8Array(4)
+  crypto.getRandomValues(buf)
+  return Array.from(buf).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 async function getPersistentShares(address: string): Promise<unknown[]> {
@@ -100,20 +102,21 @@ export async function POST(req: Request) {
 
     const recipientAddrLower = ethers.getAddress(recipientAddress).toLowerCase()
     const newEntry = {
-      id: `${recipientAddrLower}_${Date.now()}`,
+      // Include a random nonce so two shares at the same millisecond never
+      // collide on id. Deduplication uses rootHash, not id, so this is
+      // display-only — but a stable unique id prevents React key collisions.
+      id: `${recipientAddrLower}_${Date.now()}_${randomNonce()}`,
       recipientAddress: recipientAddrLower,
       senderName: cleanString(senderName, MAX_NAME),
       senderAddress: ethers.getAddress(senderAddress).toLowerCase(),
       title: cleanString(title, MAX_TITLE),
       docType: cleanString(docType, MAX_DOCTYPE),
-      // FIX: cap date string length to prevent multi-KB date injections.
       date: typeof date === 'string' ? date.slice(0, MAX_DATE) : null,
       sharedAt: typeof sharedAt === 'string' ? sharedAt : new Date().toISOString(),
       rootHash: rootHash.toLowerCase(),
     }
 
     const existingShares = await getPersistentShares(recipientAddrLower)
-    // FIX: cap total list size at MAX_SHARES; drop oldest entries when exceeded.
     const deduped = (existingShares as { rootHash?: string }[]).filter(
       (s) => s.rootHash !== newEntry.rootHash,
     )
