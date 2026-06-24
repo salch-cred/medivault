@@ -38,15 +38,13 @@ const MAX_REDIRECTS = 3
  * Returns true if the resolved IP is a private / loopback / link-local address
  * that must not be reachable via the proxy (SSRF protection).
  *
- * FIX: the original check only caught the decimal form of IPv4-mapped IPv6
- * addresses (`::ffff:192.168.x.x`) via substring match. Attackers can also
- * present the hex-group form `::ffff:0a00:0001` (= 10.0.0.1) which bypassed
- * the previous `lower.includes('::ffff:')` guard. The fix expands the check
- * to cover both decimal notation (::ffff:10.0.0.1) and hex-group notation
- * (::ffff:0a00:0001, ::ffff:c0a8:0001, etc.) by detecting the `::ffff:` prefix
- * and then resolving the embedded IPv4 address in both forms.
+ * Covers both decimal (::ffff:10.0.0.1) and hex-group (::ffff:0a00:0001)
+ * forms of IPv4-mapped IPv6 addresses.
+ *
+ * NOTE: intentionally NOT exported — Next.js route files may only export
+ * HTTP method handlers and a small set of config values.
  */
-export function isPrivateIp(ip: string): boolean {
+function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
     const p = ip.split('.').map(Number)
     return (
@@ -60,23 +58,12 @@ export function isPrivateIp(ip: string): boolean {
   }
   if (net.isIPv6(ip)) {
     const lower = ip.toLowerCase()
-    // Loopback
     if (lower === '::1') return true
-    // Unique local (fc00::/7)
     if (lower.startsWith('fc') || lower.startsWith('fd')) return true
-    // Link-local (fe80::/10)
     if (lower.startsWith('fe80')) return true
-
-    // IPv4-mapped IPv6: ::ffff:<ipv4> — covers both forms:
-    //   Decimal: ::ffff:10.0.0.1
-    //   Hex-group: ::ffff:0a00:0001  (= 10.0.0.1)
     if (lower.startsWith('::ffff:')) {
       const rest = lower.slice('::ffff:'.length)
-      // Decimal form: e.g. ::ffff:192.168.1.1
-      if (rest.includes('.')) {
-        return isPrivateIp(rest)
-      }
-      // Hex-group form: e.g. ::ffff:0a00:0001 -> parse two 16-bit groups -> IPv4
+      if (rest.includes('.')) return isPrivateIp(rest)
       const hexGroups = rest.split(':')
       if (hexGroups.length === 2) {
         const hi = parseInt(hexGroups[0], 16)
@@ -89,7 +76,6 @@ export function isPrivateIp(ip: string): boolean {
           return isPrivateIp(`${a}.${b}.${c}.${d}`)
         }
       }
-      // Any other ::ffff: form — block by default (defensive)
       return true
     }
     return false
@@ -132,7 +118,8 @@ function isOgStorageNodeBody(body: ArrayBuffer | undefined): boolean {
     return (
       reqs.length > 0 &&
       reqs.every(
-        (r: unknown) => typeof (r as Record<string, unknown>)?.method === 'string' &&
+        (r: unknown) =>
+          typeof (r as Record<string, unknown>)?.method === 'string' &&
           ((r as Record<string, unknown>).method as string).startsWith('zgs_'),
       )
     )
@@ -148,16 +135,9 @@ async function safeFetch(
   body: ArrayBuffer | undefined,
   redirectCount = 0,
 ): Promise<Response> {
-  if (redirectCount > MAX_REDIRECTS) {
-    throw new Error('Too many redirects')
-  }
+  if (redirectCount > MAX_REDIRECTS) throw new Error('Too many redirects')
 
-  const response = await fetch(targetUrl, {
-    method,
-    headers,
-    body,
-    redirect: 'manual',
-  })
+  const response = await fetch(targetUrl, { method, headers, body, redirect: 'manual' })
 
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location')
@@ -179,7 +159,6 @@ async function handleProxy(req: Request) {
     if (!isOgNodeRead && !isOgNodeRpc) {
       const auth = verifyAuth(req)
       if (!auth.ok) return auth.response
-
       if (!checkRateLimit(auth.address, 'node-proxy', 30)) {
         return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })
       }
@@ -194,7 +173,11 @@ async function handleProxy(req: Request) {
 
     const headers = new Headers()
     req.headers.forEach((value, key) => {
-      if (!['host', 'origin', 'referer', 'connection', 'content-length', 'x-medivault-auth'].includes(key.toLowerCase())) {
+      if (
+        !['host', 'origin', 'referer', 'connection', 'content-length', 'x-medivault-auth'].includes(
+          key.toLowerCase(),
+        )
+      ) {
         headers.set(key, value)
       }
     })
@@ -208,10 +191,7 @@ async function handleProxy(req: Request) {
     })
     responseHeaders.set('Access-Control-Allow-Origin', '*')
 
-    return new NextResponse(responseBuffer, {
-      status: response.status,
-      headers: responseHeaders,
-    })
+    return new NextResponse(responseBuffer, { status: response.status, headers: responseHeaders })
   } catch {
     return NextResponse.json({ error: 'Proxy request failed.' }, { status: 400 })
   }
