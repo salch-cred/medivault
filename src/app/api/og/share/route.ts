@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { randomBytes } from 'node:crypto'
 import { ethers } from 'ethers'
 import { requireAuthAddress, verifyAuth } from '@/lib/server/auth'
 
@@ -21,11 +22,13 @@ function cleanString(v: unknown, max: number): string {
   return typeof v === 'string' ? v.slice(0, max) : ''
 }
 
-/** 4-byte hex nonce to prevent ID collisions on rapid same-millisecond shares. */
+/**
+ * 4-byte random hex nonce via Node's built-in crypto module.
+ * Preferred over crypto.getRandomValues (Web Crypto global) which is not
+ * guaranteed in all serverless runtimes below Node 18.
+ */
 function randomNonce(): string {
-  const buf = new Uint8Array(4)
-  crypto.getRandomValues(buf)
-  return Array.from(buf).map((b) => b.toString(16).padStart(2, '0')).join('')
+  return randomBytes(4).toString('hex')
 }
 
 async function getPersistentShares(address: string): Promise<unknown[]> {
@@ -102,9 +105,8 @@ export async function POST(req: Request) {
 
     const recipientAddrLower = ethers.getAddress(recipientAddress).toLowerCase()
     const newEntry = {
-      // Include a random nonce so two shares at the same millisecond never
-      // collide on id. Deduplication uses rootHash, not id, so this is
-      // display-only — but a stable unique id prevents React key collisions.
+      // Random nonce ensures unique ids even for same-millisecond shares,
+      // preventing React key collisions in the received-records list.
       id: `${recipientAddrLower}_${Date.now()}_${randomNonce()}`,
       recipientAddress: recipientAddrLower,
       senderName: cleanString(senderName, MAX_NAME),
