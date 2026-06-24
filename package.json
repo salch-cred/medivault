@@ -25,6 +25,7 @@
     "clsx": "^2.1.1",
     "ethers": "^6.17.0",
     "framer-motion": "^12.40.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.451.0",
     "next": "14.2.15",
     "openai": "^4.67.1",
@@ -41,6 +42,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/jsqr": "^1.4.1",
     "@types/node": "^20.16.11",
     "@types/pdf-parse": "^1.1.4",
     "@types/react": "^18.3.11",
@@ -53,4 +55,3 @@
     "vitest": "^2.1.8"
   }
 }
-
