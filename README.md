@@ -1,185 +1,276 @@
-# MediVault
+<div align="center">
 
-**Your private, AI-powered personal health vault — built on 0G.**
+# 🏥 MediVault
 
-> Your medical records are scattered, confusing, and you're scared to upload them anywhere. MediVault uses AI to explain them in plain language and stores them encrypted on 0G — owned by you, readable by no one else.
+### Your private, AI-powered personal health vault — built on 0G.
 
-## 🚀 Live on 0G Mainnet
+*Your records are scattered. The jargon is confusing. You're scared to upload them anywhere.*
+*MediVault fixes all three — privately, permanently, on-chain.*
 
-> **[https://medivault-ecru.vercel.app](https://medivault-ecru.vercel.app)**
->
-> Deployed on **0G Mainnet (chain 16661)** — real transactions, real encrypted storage, no testnet.
+[![Live on 0G Mainnet](https://img.shields.io/badge/0G%20Mainnet-chain%2016661-6366f1?style=for-the-badge&logo=ethereum&logoColor=white)](https://medivault-ecru.vercel.app)
+[![Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)
+[![0G Zero Cup](https://img.shields.io/badge/0G%20Zero%20Cup-Competitor-10b981?style=for-the-badge)](https://0g.ai/arena/zero-cup)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
-**[▶️ Watch the demo on YouTube](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)** · Built for the **0G Zero Cup**
+**[🌐 Live App](https://medivault-ecru.vercel.app)** &nbsp;·&nbsp; **[▶️ Demo Video](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)** &nbsp;·&nbsp; **[0G Zero Cup](https://0g.ai/arena/zero-cup)**
 
----
-
-## The problem
-
-People accumulate lab reports, prescriptions, discharge summaries, and imaging results across many clinics and portals. They are:
-
-- **Scattered** across PDFs, emails, paper, and portals.
-- **Confusing** — dense medical jargon most people can't parse.
-- **Risky to store** — uploading sensitive health data to a random app means trusting a company's database with your most private information.
-
-## The solution
-
-MediVault lets you connect a wallet and upload any medical document. The AI:
-
-1. Explains it in **plain language**.
-2. Extracts **structured health data** (conditions, medications, labs, allergies, follow-ups, red flags).
-3. Builds a **chronological timeline** and **lab-trend charts**.
-4. Generates a shareable **doctor handoff** and an **emergency QR card**.
-5. Lets you **share** any record E2E-encrypted directly to another wallet address.
-
-Everything is **encrypted client-side (AES-256) before upload** and stored on **0G decentralized storage**. Your wallet is your identity and holds your keys. There is **no central database** and **no server-side key recovery**.
+</div>
 
 ---
 
-## Why 0G is essential
+## 🚨 The Problem
 
-Take 0G away and the product cannot exist. Each core capability maps directly to a 0G primitive:
+Medical records are the most important documents a person owns — yet they're the worst managed.
 
-| Feature | 0G primitive |
-| --- | --- |
-| Records encrypted before they ever leave the device | **0G Storage** stores ciphertext only (AES-256, v1 header) |
-| True data ownership, no central DB | **Wallet identity** + keys derived from a wallet signature |
-| Tamper-proof integrity | **Merkle root hash** per record, verifiable against 0G |
-| Share a record with a specific doctor | **ECIES** encryption to the doctor's wallet public key (v2 header) |
-| Plain-language explanations + chat | **0G Compute** (OpenAI-compatible decentralized inference) |
-| Vault rebuilds with no server | **0G-KV** index of record metadata / root hashes |
+| Pain point | Reality |
+|---|---|
+| 📂 **Scattered** | Spread across clinic portals, PDFs, emails, and paper printouts |
+| 😵 **Confusing** | Written in dense medical jargon most patients can't parse |
+| 😰 **Risky to store** | Uploading to Google Drive or a random app means trusting a company forever |
+| 🚫 **Unshareable** | No secure, instant way to hand a record to a new doctor |
+
+> *Every year, patients show up to emergency rooms unable to recall their medications, allergies, or prior diagnoses — because their records are scattered across systems they can't access.*
 
 ---
 
-## Architecture
+## ✅ The Solution
+
+MediVault is a **self-sovereign health vault**. Connect your MetaMask wallet — that's your identity, your key, your vault.
+
+```
+  Upload any document  →  AI explains it  →  Encrypted on 0G  →  Yours forever
+```
+
+### How it works
+
+1. **Connect wallet** — MetaMask signs a fixed message; MediVault derives a deterministic AES-256 key. The key never leaves your browser.
+2. **Upload** — Drop in a lab report, prescription, discharge summary, or image. PDF parsing + OCR handles any format.
+3. **AI explains** — 0G Compute returns a plain-language summary, extracts conditions / medications / allergies / red flags, and flags anything urgent.
+4. **Encrypt & store** — AES-256 ciphertext is uploaded to 0G Storage. The Merkle root hash is indexed in 0G-KV. Your server never sees plaintext.
+5. **Vault rebuilds anywhere** — Open MediVault on any device, connect wallet, full history appears. No login. No server. No cloud backup.
+
+---
+
+## 🔑 Why 0G — Not IPFS, Not S3, Not Anything Else
+
+Every feature in MediVault depends on a specific 0G primitive. Remove 0G and the product cannot exist.
+
+| Feature | 0G primitive used |
+|---|---|
+| Permanent, verifiable encrypted storage | **0G Storage** — ciphertext with AES-256 v1 header + Merkle root |
+| No central database, no server key | **Wallet identity** — key derived from wallet signature, never persisted |
+| Tamper-proof record integrity | **Merkle root hash** — verifiable against 0G at any time |
+| E2E share to a specific doctor | **ECIES** — encrypted to recipient's wallet public key (v2 header) |
+| AI explanations and chat | **0G Compute** — OpenAI-compatible decentralized inference |
+| Vault index rebuilds from scratch | **0G-KV** — record metadata and root hashes, keyed by wallet |
+
+---
+
+## ✨ Features
+
+<table>
+<tr>
+<td width="50%">
+
+**🔐 Wallet-native identity**
+Connect MetaMask → AES-256 key derived in-browser from wallet signature. Zero passwords. Zero email.
+
+**🧠 AI-powered explanations**
+Every document gets a plain-language summary via 0G Compute. Multi-language. "Explain like I'm 5" toggle.
+
+**🔒 Client-side encryption**
+AES-256 before upload. 0G Storage receives ciphertext only. Server never sees your health data.
+
+**✅ Tamper-proof integrity**
+Merkle root hash on every record. One-click verification against 0G.
+
+**📈 Health timeline + lab trends**
+Chronological view across all records. Lab value charts vs. reference ranges.
+
+</td>
+<td width="50%">
+
+**👩‍⚕️ E2E doctor sharing**
+Share any record to a doctor's wallet address via ECIES encryption. Delivered to their received tab. Zero server relay.
+
+**🩺 Doctor handoff + Emergency QR**
+One-click printable handoff summary. Emergency QR card with blood type, allergies, and critical meds — save to your phone lock screen.
+
+**💬 Chat across all records**
+Ask questions across your entire vault with AI citations pointing to source documents.
+
+**📲 PWA — works offline**
+Installs as a home-screen app. Service worker caches the shell. Records accessible from local encrypted cache.
+
+**🔗 Consent ledger**
+Hash-chained audit trail on 0G of every share event — who, what, when.
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 flowchart TD
-  U["User + MetaMask wallet"] -->|"sign fixed message"| K["AES-256 key (deterministic, wallet-derived)"]
-  U -->|"upload document"| P["Parse: pdf-parse / tesseract.js OCR / text"]
-  P --> AI["0G Compute (OpenAI-compatible)"]
-  AI --> EX["ExtractionResult JSON (plain-language + structured)"]
-  EX --> ENC["Encrypt client-side (AES-256)"]
+  U(["👤 User + MetaMask"]) -->|"sign fixed message"| K(["🔑 AES-256 key"])
+  U -->|"upload document"| P(["📄 Parse"])
+  P -->|"pdf-parse / tesseract OCR"| AI(["🧠 0G Compute"])
+  AI --> EX(["ExtractionResult JSON"])
+  EX --> ENC(["🔒 Encrypt AES-256"])
   P --> ENC
-  ENC --> S["0G Storage (ciphertext + Merkle root)"]
-  S --> IDX["0G-KV index (record metadata + root hashes)"]
-  IDX --> V["Vault rebuilds entirely from 0G"]
-  S -->|"ECIES to doctor public key"| D["Doctor decrypts with their private key"]
+  K --> ENC
+  ENC --> S(["0G Storage"])
+  S --> IDX(["0G-KV index"])
+  IDX -->|"any device, any time"| V(["✅ Vault"])
+  S -->|"ECIES re-encrypt"| D(["👩‍⚕️ Doctor's wallet"])
 ```
 
-### Adapters
+### Storage & Index Adapters
 
-Storage and indexing are isolated behind two interfaces (`src/lib/og/adapters.ts`):
+All 0G I/O is isolated behind two clean interfaces in `src/lib/og/adapters.ts`:
 
-- **`StorageAdapter`** → `OgStorageAdapter` (`src/lib/og/storage-adapter.ts`): `uploadEncrypted`, `downloadDecrypted`, `shareToRecipient`, `verifyIntegrity` over the real 0G Storage SDK.
-- **`IndexAdapter`** → `KvIndexAdapter` (`src/lib/og/kv-index-adapter.ts`): `put`, `list`, `get` over real **0G-KV**.
+```ts
+// Storage — upload, download, share, verify
+interface StorageAdapter {
+  uploadEncrypted(file, key): Promise<string>   // returns rootHash
+  downloadDecrypted(rootHash, key): Promise<Blob>
+  shareToRecipient(rootHash, recipientPubKey): Promise<void>
+  verifyIntegrity(rootHash): Promise<boolean>
+}
 
-These are the only implementations — there are no mock versions.
+// Index — put, list, get record metadata
+interface IndexAdapter {
+  put(walletAddress, record): Promise<void>
+  list(walletAddress): Promise<RecordMeta[]>
+  get(walletAddress, rootHash): Promise<RecordMeta>
+}
+```
 
----
-
-## Features
-
-- 🔐 Connect MetaMask; derive an AES-256 key from a wallet signature
-- 📄 Upload TXT / MD / PDF and images (client `tesseract.js` OCR)
-- 🧠 AI extraction → `ExtractionResult` via 0G Compute
-- 🗣️ Plain-language explanation, multi-language, and an "Explain like I'm 5" toggle
-- 🔒 AES-256 client-side encryption + upload to 0G + root hash stored in 0G-KV
-- ✅ "Encrypted on 0G" badge + root hash + tamper-proof integrity verification on every record
-- 📈 Health timeline and lab-trend charts vs. reference ranges
-- 🩺 Doctor handoff summary (print / save PDF) and emergency QR card
-- 👩‍⚕️ ECIES share-to-doctor — encrypt to a recipient wallet public key, delivered to their dashboard
-- 💬 Chat across all records with citations
-- 📲 PWA — installs as a home-screen app, works offline from local encrypted cache
+No mocks. No stubs. Both interfaces have exactly one implementation — the real 0G SDK.
 
 ---
 
-## Local setup
+## 🛡️ Security Model
+
+```
+Your wallet private key
+        │
+        ▼
+  sign(fixedMessage)  ──→  AES-256 key  ──→  encrypts records
+                                │
+                          NEVER stored
+                          NEVER sent to server
+                          NEVER logged
+```
+
+- **Zero-knowledge server** — API routes process only ciphertext. Plaintext never touches the backend.
+- **No recovery by design** — If you lose your wallet, you lose your vault. This is a feature, not a bug.
+- **Rate-limited APIs** — Hybrid L1 in-process + L2 KV-backed rate limiter on all public endpoints.
+- **ECIES sharing** — Uses `ethers.SigningKey.computePublicKey` + SDK ECIES header. Only the recipient's private key can decrypt.
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- [MetaMask](https://metamask.io) browser extension
+- Node.js 18+
+- A [0G Compute API key](https://router-api.0g.ai)
+
+### Run locally
 
 ```bash
-# 1. Install
+git clone https://github.com/salch-cred/medivault
+cd medivault
 npm install
-
-# 2. Configure environment
 cp .env.example .env.local
-# then fill in the values (see below)
-
-# 3. Run
+# fill in API keys (see below)
 npm run dev
-# open http://localhost:3000
+# → http://localhost:3000
 ```
 
-You'll need the **MetaMask** browser extension. Add the **0G Mainnet** network:
+### Add 0G Mainnet to MetaMask
 
-- RPC URL: `https://evmrpc.0g.ai`
-- Chain ID: `16661`
-- Block explorer: `https://chainscan.0g.ai`
+| Field | Value |
+|---|---|
+| Network name | 0G Mainnet |
+| RPC URL | `https://evmrpc.0g.ai` |
+| Chain ID | `16661` |
+| Block explorer | `https://chainscan.0g.ai` |
 
-### Get mainnet tokens
-
-Uploading to 0G Storage and writing the 0G-KV index are on-chain operations, so you need a small amount of 0G gas:
-
-1. Open the faucet: **https://faucet.0g.ai**
-2. Paste your wallet address and request tokens.
-3. Confirm the balance in MetaMask, then upload your first document.
+Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and indexing are on-chain operations.
 
 ---
 
-## Environment variables
+## ⚙️ Environment Variables
 
-Server-side (never exposed to the browser):
-
-| Variable | Description |
-| --- | --- |
-| `AI_BASE_URL` | 0G Compute OpenAI-compatible base URL (`https://router-api.0g.ai/v1`) |
-| `AI_API_KEY` | Your 0G Compute API key |
-| `AI_MODEL` | Model id served by 0G Compute |
-
-Client-side (`NEXT_PUBLIC_*`, used by the wallet/SDK in the browser):
+**Server-side** (secret — never exposed to browser):
 
 | Variable | Description |
-| --- | --- |
-| `NEXT_PUBLIC_ZG_RPC_URL` | `https://evmrpc.0g.ai` (0G Mainnet) |
+|---|---|
+| `AI_API_KEY` | 0G Compute API key |
+| `AI_BASE_URL` | 0G Compute base URL (default: `https://router-api.0g.ai/v1`) |
+| `AI_MODEL` | Model ID served by 0G Compute |
+
+**Client-side** (`NEXT_PUBLIC_*`):
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_ZG_RPC_URL` | `https://evmrpc.0g.ai` |
 | `NEXT_PUBLIC_ZG_INDEXER_RPC` | `https://indexer-storage-turbo.0g.ai` |
 | `NEXT_PUBLIC_ZG_CHAIN_ID` | `16661` |
-| `NEXT_PUBLIC_ZG_KV_NODE_URL` | 0G-KV node URL |
 | `NEXT_PUBLIC_ZG_FLOW_CONTRACT` | 0G flow contract address |
-| `NEXT_PUBLIC_APP_URL` | Your app URL (used for share links) |
-
-See `.env.example` for the full list with defaults.
-
----
-
-## 0G integration notes
-
-- **SDK:** `@0gfoundation/0g-storage-ts-sdk` with `ethers` v6.
-- **Upload** uses `indexer.upload(blob, RPC_URL, signer, { encryption: { type: 'aes256', key } })`.
-- **Download + decrypt** uses `indexer.downloadToBlob(rootHash, { proof: true, decryption: { symmetricKey: key } })`.
-- **ECIES** uses `ethers.SigningKey.computePublicKey(pubKey, true)` + `{ encryption: { type: 'ecies', recipientPubKey } }`.
-- **0G-KV** writes via `Batcher` + `streamDataBuilder.set(...)` + `batcher.exec()`, reads via `KvClient.getValue(...)`.
-- **Browser polyfills:** `next.config.mjs` provides `Buffer`/`process` and Node core fallbacks.
-- Reference: https://github.com/0gfoundation/0g-storage-ts-starter-kit
-
-### Security model
-
-- The AES-256 key is derived deterministically from a wallet signature over a fixed message — never persisted or sent anywhere.
-- Only ciphertext is uploaded. Plaintext health data and keys are never logged.
-- No server-side key recovery. Lose your wallet = lose your vault. By design.
-
-> ⚠️ MediVault organizes and explains your records. **It is not medical advice.** Always consult a qualified clinician.
+| `NEXT_PUBLIC_ZG_KV_NODE_URL` | 0G-KV node URL |
+| `NEXT_PUBLIC_APP_URL` | Your deployed URL |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | From [cloud.reown.com](https://cloud.reown.com) |
 
 ---
 
-## Roadmap
+## 🛠️ Tech Stack
 
-- Wallet-based access control lists for multi-doctor sharing and revocation
-- Background re-encryption / key rotation
-- More document types (insurance, vaccination, genomics)
-- Native mobile app with on-device camera capture
-- Provider-side inbox for received ECIES shares
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14 (App Router) |
+| Blockchain | 0G Mainnet (chain 16661) via ethers v6 |
+| Storage | `@0gfoundation/0g-storage-ts-sdk` |
+| AI inference | 0G Compute (OpenAI-compatible) |
+| Wallet | MetaMask + Web3Modal / WalletConnect |
+| Encryption | AES-256 (v1) + ECIES (v2) via 0G SDK |
+| OCR | `tesseract.js` (client-side) |
+| PDF parsing | `pdf-parse` (server-side) |
+| QR scanning | `jsqr` (cross-browser, iOS Safari safe) |
+| UI | Tailwind CSS + shadcn/ui + Framer Motion |
+| PWA | Service Worker + Web App Manifest |
 
 ---
 
-## License
+## 🗺️ Roadmap
 
-MIT
+- [ ] Wallet-based access control lists — multi-doctor sharing + revocation
+- [ ] Background key rotation and re-encryption
+- [ ] Richer document types — insurance, vaccination records, genomics
+- [ ] Native mobile app with on-device camera capture
+- [ ] Provider-side inbox for received ECIES shares
+- [ ] Selective-disclosure ZK proofs — prove a fact without revealing the record
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
+<div align="center">
+
+> ⚠️ MediVault explains and organizes your records. **It is not medical advice.** Always consult a qualified clinician.
+
+**Built with ❤️ for the [0G Zero Cup](https://0g.ai/arena/zero-cup)**
+
+[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai)
+
+</div>
