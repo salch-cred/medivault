@@ -22,7 +22,7 @@ declare class BarcodeDetector {
 /**
  * Mobile-only header action that opens a bottom-sheet with two tabs:
  *
- *  "My QR"  — shows the user's wallet address as a scannable QR + copy button.
+ *  "My QR"   — shows the user's wallet address as a scannable QR + copy button.
  *  "Scan QR" — opens the rear camera, detects QR codes in real-time via the
  *              BarcodeDetector Web API, and falls back to a file-input (photo
  *              capture) for browsers that don't support it (e.g. Safari < 17).
@@ -33,7 +33,7 @@ export function HeaderShareQr() {
   const [copied, setCopied] = useState(false)
   const [tab, setTab] = useState<Tab>('my-qr')
 
-  // ── Scanner state ──────────────────────────────────────────────────────────
+  // ── Scanner state ────────────────────────────────────────────────────────
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -46,7 +46,7 @@ export function HeaderShareQr() {
 
   const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const copyAddr = useCallback(
     async (addr?: string) => {
       const toCopy = addr ?? address
@@ -77,7 +77,7 @@ export function HeaderShareQr() {
     setTab('my-qr')
   }, [stopCamera])
 
-  // ── Camera scanner ─────────────────────────────────────────────────────────
+  // ── Camera scanner ────────────────────────────────────────────────────────
   const startScanner = useCallback(async () => {
     setScanResult(null)
     setCameraError(null)
@@ -101,8 +101,8 @@ export function HeaderShareQr() {
       setScanning(true)
 
       if (typeof BarcodeDetector === 'undefined') {
-        // No native support — live preview is still shown; file-input is
-        // the primary decode path in this case.
+        // No native support — live preview is shown; file-input is the
+        // primary decode path in this case.
         return
       }
 
@@ -132,7 +132,7 @@ export function HeaderShareQr() {
     } catch (err: unknown) {
       const msg =
         err instanceof Error
-          ? err.message.includes('Permission')
+          ? err.message.toLowerCase().includes('permission')
             ? 'Camera permission denied. Please allow camera access and try again.'
             : err.message
           : 'Camera unavailable'
@@ -153,11 +153,11 @@ export function HeaderShareQr() {
     return () => stopCamera()
   }, [tab, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── File-input fallback (Safari / older browsers) ──────────────────────────
+  // ── File-input fallback (Safari / older browsers) ─────────────────────────
   const handleFileCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    e.target.value = '' // reset so same file can be re-selected
+    e.target.value = '' // reset so the same file can be re-selected
 
     const bitmap = await createImageBitmap(file)
     if (typeof BarcodeDetector !== 'undefined') {
@@ -172,7 +172,7 @@ export function HeaderShareQr() {
         }
       } catch {}
     }
-    // Fallback: draw to canvas + try again (belt-and-braces)
+    // Draw to canvas for future jsQR integration
     const canvas = canvasRef.current
     if (canvas) {
       canvas.width = bitmap.width
@@ -182,7 +182,7 @@ export function HeaderShareQr() {
     toast.error('No QR code found — try a clearer image or move closer.')
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       {/* Trigger button — mobile/tablet only */}
@@ -195,7 +195,7 @@ export function HeaderShareQr() {
         <QrCode className="h-4 w-4" />
       </button>
 
-      {/* Modal sheet */}
+      {/* Modal bottom-sheet */}
       {open && (
         <div
           className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
@@ -245,6 +245,7 @@ export function HeaderShareQr() {
 
             {/* ── Tab content ── */}
             <div className="px-5 pb-6">
+
               {/* ── My QR tab ── */}
               {tab === 'my-qr' && (
                 <div className="flex flex-col items-center gap-4">
@@ -331,12 +332,12 @@ export function HeaderShareQr() {
                               <span className="absolute right-0 top-0 h-8 w-8 rounded-tr-md border-r-2 border-t-2 border-white/90" />
                               <span className="absolute bottom-0 left-0 h-8 w-8 rounded-bl-md border-b-2 border-l-2 border-white/90" />
                               <span className="absolute bottom-0 right-0 h-8 w-8 rounded-br-md border-b-2 border-r-2 border-white/90" />
-                              {/* Scan line */}
+                              {/* Animated scan line */}
                               {scanning && (
                                 <span
-                                  className="absolute inset-x-3 h-0.5 animate-scan-line rounded-full bg-green-400"
+                                  className="absolute inset-x-3 h-0.5 rounded-full bg-green-400 animate-scan-line"
                                   style=
-                                    boxShadow: '0 0 8px 2px rgba(74,222,128,0.7)',
+                                    boxShadow: '0 0 8px 2px rgba(74,222,128,0.55)',
                                   
                                 />
                               )}
