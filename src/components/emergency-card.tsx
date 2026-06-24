@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { useVault } from '@/lib/store'
 import { buildEmergencyProfile } from '@/lib/health'
 import type { VaultRecord } from '@/lib/og/types'
@@ -17,16 +17,21 @@ import { encryptWithPin } from '@/lib/pin-crypto'
 export function EmergencyCard({ records }: { records: VaultRecord[] }) {
   const { emergency, setBloodType, address } = useVault()
   const profile = useMemo(() => buildEmergencyProfile(records), [records])
-  
+
   const [pin, setPin] = useState('')
   const [encryptedPayload, setEncryptedPayload] = useState<string | null>(null)
   const [isEncrypting, setIsEncrypting] = useState(false)
 
-  // Real-time PeerJS variables
+  // Safe client-only origin — avoids SSR window crash
+  const [origin, setOrigin] = useState('')
+  useEffect(() => { setOrigin(window.location.origin) }, [])
+
+  // PeerJS live-approval state
   const [peerId, setPeerId] = useState<string>('')
-  const [activeConnection, setActiveConnection] = useState<any>(null)
+  const [peerReady, setPeerReady] = useState(false)   // true once PeerJS opens OR timeout fires
+  const [activeConnection, setActiveConnection] = useState<unknown>(null)
   const [showApprovalModal, setShowApprovalModal] = useState(false)
-  const peerRef = useRef<any>(null)
+  const peerRef = useRef<{ destroy(): void } | null>(null)
 
   const qrText = useMemo(() => {
     const lines = [
@@ -45,96 +50,77 @@ export function EmergencyCard({ records }: { records: VaultRecord[] }) {
     return lines.join('\n')
   }, [emergency.bloodType, profile, address])
 
+  // PIN-based encryption
   useEffect(() => {
     let active = true
-    // Require a numeric PIN of at least 6 digits. Shorter/4-digit PINs have a
-    // keyspace small enough to brute-force offline from the QR payload even
-    // with the now-600k PBKDF2 iterations.
     const isStrongPin = /^\d{6,}$/.test(pin)
-    if (!isStrongPin) {
-      setEncryptedPayload(null)
-      return
-    }
-
+    if (!isStrongPin) { setEncryptedPayload(null); return }
     setIsEncrypting(true)
     encryptWithPin(qrText, pin)
-      .then((payload) => {
-        if (active) {
-          setEncryptedPayload(payload)
-          setIsEncrypting(false)
-        }
-      })
-      .catch((e) => {
-        console.error('Encryption failed:', e)
-        if (active) setIsEncrypting(false)
-      })
-
-    return () => {
-      active = false
-    }
+      .then((payload) => { if (active) { setEncryptedPayload(payload); setIsEncrypting(false) } })
+      .catch((e) => { console.error('Encryption failed:', e); if (active) setIsEncrypting(false) })
+    return () => { active = false }
   }, [qrText, pin])
 
-  // Initialize PeerJS for live approval
+  // PeerJS — 3 s timeout so the QR never stays a spinner forever
   useEffect(() => {
     let mounted = true
-    import('peerjs').then(({ default: Peer }) => {
-      if (!mounted) return
-      
-      // Cryptographically random peer id so the public-broker PeerJS id can't
-      // be guessed/registered by an attacker to intercept or impersonate.
-      const randomId =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : Math.random().toString(36).slice(2) + Date.now().toString(36)
-      const newPeerId = 'medivault-' + randomId
-      const peer = new Peer(newPeerId)
-      
-      peer.on('open', (id) => {
-        if (mounted) setPeerId(id)
-      })
+    // Fallback: if PeerJS hasn't opened within 3 s, show the plain-text QR anyway
+    const fallbackTimer = setTimeout(() => { if (mounted) setPeerReady(true) }, 3000)
 
-      peer.on('connection', (conn) => {
-        conn.on('data', (data: any) => {
-          if (data && data.type === 'REQUEST_ACCESS') {
-            setActiveConnection(conn)
-            setShowApprovalModal(true)
-          }
+    import('peerjs')
+      .then(({ default: Peer }) => {
+        if (!mounted) return
+        const randomId =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2) + Date.now().toString(36)
+        const peer = new Peer('medivault-' + randomId)
+        peer.on('open', (id: string) => {
+          if (mounted) { setPeerId(id); setPeerReady(true) }
         })
+        peer.on('error', () => { if (mounted) setPeerReady(true) })
+        peer.on('connection', (conn: any) => {
+          conn.on('data', (data: any) => {
+            if (data?.type === 'REQUEST_ACCESS') {
+              setActiveConnection(conn)
+              setShowApprovalModal(true)
+            }
+          })
+        })
+        peerRef.current = peer
       })
-
-      peerRef.current = peer
-    })
+      .catch(() => { if (mounted) setPeerReady(true) })
 
     return () => {
       mounted = false
-      if (peerRef.current) peerRef.current.destroy()
+      clearTimeout(fallbackTimer)
+      peerRef.current?.destroy()
     }
   }, [])
 
   const handleApproveAccess = () => {
-    // In a real app, this might trigger MetaMask: `ethers.Signer.signMessage(...)`
-    // For now, we simulate the "sign to unlock" intent since the payload is already local.
-    if (activeConnection) {
-      activeConnection.send({ type: 'APPROVED', payload: qrText })
-    }
+    if (activeConnection) (activeConnection as any).send({ type: 'APPROVED', payload: qrText })
     setShowApprovalModal(false)
     setActiveConnection(null)
   }
 
   const handleDenyAccess = () => {
-    if (activeConnection) {
-      activeConnection.send({ type: 'DENIED' })
-    }
+    if (activeConnection) (activeConnection as any).send({ type: 'DENIED' })
     setShowApprovalModal(false)
     setActiveConnection(null)
   }
 
-  // If no valid PIN, the QR code uses the live peer ID to request permission securely
-  const qrUrl = encryptedPayload 
-    ? `${window.location.origin}/scan?payload=${encryptedPayload}`
-    : peerId 
-      ? `${window.location.origin}/scan?peer=${peerId}` 
-      : qrText
+  // Build the QR value — only after origin is known (client-side)
+  const qrValue = useMemo(() => {
+    if (!origin) return qrText          // SSR / hydration — plain text is safe
+    if (encryptedPayload) return `${origin}/scan?payload=${encryptedPayload}`
+    if (peerId) return `${origin}/scan?peer=${peerId}`
+    return qrText                       // PeerJS failed / timed out — plain text
+  }, [origin, encryptedPayload, peerId, qrText])
+
+  // Show spinner only while actively encrypting OR waiting for PeerJS (max 3 s)
+  const showSpinner = isEncrypting || (!peerReady && !encryptedPayload)
 
   return (
     <>
@@ -162,11 +148,7 @@ export function EmergencyCard({ records }: { records: VaultRecord[] }) {
               <p className="text-sm font-medium">Allergies</p>
               {profile.allergies.length ? (
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {profile.allergies.map((a) => (
-                    <Badge key={a} variant="destructive">
-                      {a}
-                    </Badge>
-                  ))}
+                  {profile.allergies.map((a) => <Badge key={a} variant="destructive">{a}</Badge>)}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">None recorded</p>
@@ -177,9 +159,7 @@ export function EmergencyCard({ records }: { records: VaultRecord[] }) {
               <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
                 {profile.medications.length ? (
                   profile.medications.slice(0, 6).map((m, i) => (
-                    <li key={i}>
-                      {m.name} {m.dose}
-                    </li>
+                    <li key={i}>{m.name} {m.dose}</li>
                   ))
                 ) : (
                   <li>None recorded</li>
@@ -204,7 +184,6 @@ export function EmergencyCard({ records }: { records: VaultRecord[] }) {
             <CardTitle>Scan in an emergency</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
-            
             <div className="w-full space-y-2 max-w-xs bg-muted/30 p-4 rounded-xl border border-border/50">
               <Label htmlFor="pin" className="flex items-center gap-1 text-sm font-medium">
                 <Lock className="h-4 w-4 text-primary" /> Secure with PIN (optional)
@@ -222,25 +201,27 @@ export function EmergencyCard({ records }: { records: VaultRecord[] }) {
                 className="bg-background"
               />
               <p className="text-[10px] text-muted-foreground">
-                Use at least 6 digits. If no PIN is set, scanners must "Ask Permission" and you approve it live.
+                6+ digits. Without a PIN, scanners must request live permission.
               </p>
             </div>
 
-            <div className="relative rounded-2xl bg-white p-4 shadow-sm min-h-[228px] flex items-center justify-center">
-              {isEncrypting || (!peerId && !encryptedPayload) ? (
+            <div className="relative rounded-2xl bg-white p-4 shadow-sm min-h-[228px] w-full max-w-xs flex items-center justify-center">
+              {showSpinner ? (
                 <div className="flex flex-col items-center gap-2 text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  <span className="text-xs">Generating secure QR...</span>
+                  <span className="text-xs">Generating QR…</span>
                 </div>
               ) : (
-                <QRCodeCanvas value={qrUrl} size={196} includeMargin />
+                <QRCodeCanvas value={qrValue} size={196} includeMargin />
               )}
             </div>
-            
+
             <p className="max-w-xs text-center text-xs text-muted-foreground">
-              {encryptedPayload 
-                ? "This QR links to a secure scanner that requires your PIN to decrypt."
-                : "This QR requires live permission. Scanners must request access."}
+              {encryptedPayload
+                ? 'This QR links to a secure scanner — PIN required to decrypt.'
+                : peerId
+                ? 'This QR requires live permission. Scanners must request access.'
+                : 'Scan this code in an emergency for instant medical info.'}
             </p>
           </CardContent>
         </Card>
@@ -253,12 +234,12 @@ export function EmergencyCard({ records }: { records: VaultRecord[] }) {
               <AlertTriangle className="h-5 w-5" /> Access Request
             </DialogTitle>
             <DialogDescription className="text-base pt-2 text-foreground">
-              Someone has scanned your Emergency QR Code and is requesting access to view your medical profile.
+              Someone has scanned your Emergency QR and is requesting access to your medical profile.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3 pt-4">
             <Button onClick={handleApproveAccess} className="w-full bg-red-600 hover:bg-red-700 text-white" size="lg">
-              Sign & Approve Access
+              Sign &amp; Approve Access
             </Button>
             <Button onClick={handleDenyAccess} variant="outline" className="w-full" size="lg">
               Deny
