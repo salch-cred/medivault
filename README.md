@@ -1,6 +1,6 @@
 <div align="center">
 
-[![MediVault Banner](docs/screenshots/thumbnail.png)](https://medivault-ecru.vercel.app)
+[![MediVault Banner](docs/screenshots/thumbnail.png.jpeg)](https://medivault-ecru.vercel.app)
 
 # 🏥 MediVault
 
