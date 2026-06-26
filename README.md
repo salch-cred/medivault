@@ -1,5 +1,7 @@
 <div align="center">
 
+[![MediVault Banner](docs/screenshots/thumbnail.png)](https://medivault-ecru.vercel.app)
+
 # 🏥 MediVault
 
 ### Your private, AI-powered personal health vault — built on 0G.
