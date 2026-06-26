@@ -19,6 +19,92 @@
 
 ---
 
+## 📸 Screenshots
+
+### 🖥️ Desktop
+
+<table>
+<tr>
+<td align="center" width="50%">
+
+**Landing Page**
+
+![Landing Page Desktop](docs/screenshots/desktop-landing.png)
+
+*Hero — "Your health history, cryptographically yours"*
+
+</td>
+<td align="center" width="50%">
+
+**Vault Dashboard**
+
+![Vault Dashboard Desktop](docs/screenshots/desktop-vault.png)
+
+*All records, encrypted & indexed on 0G-KV*
+
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+
+**AI Summary**
+
+![AI Summary Desktop](docs/screenshots/desktop-ai-summary.png)
+
+*Plain-language explanation via 0G Compute*
+
+</td>
+<td align="center" width="50%">
+
+**Doctor Sharing + QR**
+
+![Doctor Share Desktop](docs/screenshots/desktop-share-qr.png)
+
+*ECIES-encrypted share + emergency QR card*
+
+</td>
+</tr>
+</table>
+
+### 📱 Mobile
+
+<table>
+<tr>
+<td align="center" width="25%">
+
+**Landing**
+
+![Mobile Landing](docs/screenshots/mobile-landing.png)
+
+</td>
+<td align="center" width="25%">
+
+**Vault**
+
+![Mobile Vault](docs/screenshots/mobile-vault.png)
+
+</td>
+<td align="center" width="25%">
+
+**AI Summary**
+
+![Mobile AI](docs/screenshots/mobile-ai-summary.png)
+
+</td>
+<td align="center" width="25%">
+
+**QR Scanner**
+
+![Mobile QR](docs/screenshots/mobile-qr-scanner.png)
+
+</td>
+</tr>
+</table>
+
+> 📲 MediVault is a **PWA** — install it directly from your browser on iOS or Android. No app store needed.
+
+---
+
 ## 🚨 The Problem
 
 Medical records are the most important documents a person owns — yet they're the worst managed.
