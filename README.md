@@ -29,7 +29,7 @@
 
 **Landing Page**
 
-![Landing Page Desktop](docs/screenshots/desktop-landing.png)
+![Landing Page Desktop](docs/screenshots/desktop-landing.png.png)
 
 *Hero — "Your health history, cryptographically yours"*
 
@@ -38,7 +38,7 @@
 
 **Vault Dashboard**
 
-![Vault Dashboard Desktop](docs/screenshots/desktop-vault.png)
+![Vault Dashboard Desktop](docs/screenshots/desktop-vault.png.png)
 
 *All records, encrypted & indexed on 0G-KV*
 
@@ -49,7 +49,7 @@
 
 **AI Summary**
 
-![AI Summary Desktop](docs/screenshots/desktop-ai-summary.png)
+![AI Summary Desktop](docs/screenshots/desktop-ai-summary.png.png)
 
 *Plain-language explanation via 0G Compute*
 
@@ -58,7 +58,7 @@
 
 **Doctor Sharing + QR**
 
-![Doctor Share Desktop](docs/screenshots/desktop-share-qr.png)
+![Doctor Share Desktop](docs/screenshots/desktop-share-qr.png.png)
 
 *ECIES-encrypted share + emergency QR card*
 
@@ -74,28 +74,28 @@
 
 **Landing**
 
-![Mobile Landing](docs/screenshots/mobile-landing.png)
+![Mobile Landing](docs/screenshots/mobile-landing.png.png)
 
 </td>
 <td align="center" width="25%">
 
 **Vault**
 
-![Mobile Vault](docs/screenshots/mobile-vault.png)
+![Mobile Vault](docs/screenshots/mobile-vault.png.png)
 
 </td>
 <td align="center" width="25%">
 
 **AI Summary**
 
-![Mobile AI](docs/screenshots/mobile-ai-summary.png)
+![Mobile AI](docs/screenshots/mobile-ai-summary.png%20(2).png)
 
 </td>
 <td align="center" width="25%">
 
 **QR Scanner**
 
-![Mobile QR](docs/screenshots/mobile-qr-scanner.png)
+![Mobile QR](docs/screenshots/mobile-qr-scanner.png.png)
 
 </td>
 </tr>
