@@ -70,7 +70,6 @@ Remove 0G and MediVault cannot function:
 - No ERC-7857 contract → no Agentic iNFT, no on-chain sealed key recovery
 
 ## MCP Tools (agent-accessible)
-See `/verify` page and `/api/og/health` for live 0G network status.
 Any agent can verify a MediVault record root hash via:
 ```
 GET https://medivault-ecru.vercel.app/api/og/verify?rootHash=0x<64-hex-chars>
@@ -80,7 +79,7 @@ GET https://medivault-ecru.vercel.app/api/og/verify?rootHash=0x<64-hex-chars>
 ```solidity
 // Mint ERC-7857 iNFT vault
 function createVault(bytes32 rootHash, bytes32 dataHash, bytes calldata sealedKey, address oracle) returns (uint256)
-function createVault(bytes32 rootHash) returns (uint256) // legacy
+function createVault(bytes32 rootHash) returns (uint256) // legacy compatible
 
 // ERC-7857 doctor access
 function authorizeUsage(uint256 tokenId, address executor, bytes calldata permissions) external
@@ -91,7 +90,7 @@ function getExecutorPermissions(uint256 tokenId, address executor) returns (byte
 function getAgentData(uint256 tokenId) returns (AgentData memory)
 function isAuthorized(uint256 tokenId, address executor) returns (bool)
 
-// Vault state
+// Vault reads
 function getVaultByAddress(address wallet) returns (uint256, bytes32, uint256, uint256, uint256, bool)
 function hasActiveVault(address wallet) returns (bool)
 function getRootHash(address wallet) returns (bytes32)

@@ -37,8 +37,7 @@ async function main() {
   console.log("\n📝 Next steps:");
   console.log(`   1. Copy contract address: ${address}`);
   console.log("   2. Update Vercel env: NEXT_PUBLIC_MEDIVAULT_REGISTRY=" + address);
-  console.log("   3. Update README with the contract address");
-  console.log("   4. Verify on chainscan.0g.ai");
+  console.log("   3. Verify on chainscan.0g.ai");
 }
 
 main().catch((error) => {

@@ -10,7 +10,7 @@
 *MediVault fixes all three — privately, permanently, on-chain.*
 
 [![Live on 0G Mainnet](https://img.shields.io/badge/0G%20Mainnet-Live-6366f1?style=for-the-badge&logo=ethereum&logoColor=white)](https://medivault-ecru.vercel.app)
-[![Contract Deployed](https://img.shields.io/badge/Contract-0G%20Mainnet-22c55e?style=for-the-badge&logo=ethereum&logoColor=white)](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e)
+[![Contract Deployed](https://img.shields.io/badge/Contract-0G%20Mainnet-22c55e?style=for-the-badge&logo=ethereum&logoColor=white)](https://chainscan.0g.ai/address/0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f)
 [![ERC-7857 iNFT](https://img.shields.io/badge/ERC--7857-Agentic%20iNFT-a855f7?style=for-the-badge&logo=ethereum&logoColor=white)](https://docs.0g.ai/developer-hub/building-on-0g/agentic-id/erc7857)
 [![Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)
 [![0G Zero Cup](https://img.shields.io/badge/0G%20Zero%20Cup-2026-10b981?style=for-the-badge)](https://0g.ai/arena/zero-cup)
@@ -35,10 +35,10 @@
 
 | Item | Details |
 |------|--------|
-| 📜 **MediVaultRegistry Contract** | [`0x47b0E8247d3c176E567C3B48743596f87171403e`](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e) |
+| 📜 **MediVaultRegistry Contract** | [`0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f`](https://chainscan.0g.ai/address/0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f) |
 | 🤖 **Standard** | ERC-7857 Agentic iNFT — [0G Docs](https://docs.0g.ai/developer-hub/building-on-0g/agentic-id/erc7857) |
 | 🌐 **Network** | 0G Mainnet — Chain ID `16661` |
-| 🔍 **Block Explorer** | [View on chainscan.0g.ai](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e) |
+| 🔍 **Block Explorer** | [View on chainscan.0g.ai](https://chainscan.0g.ai/address/0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f) |
 | ⛽ **Live Health Endpoint** | [`/api/og/health`](https://medivault-ecru.vercel.app/api/og/health) — live block + node count |
 | ✅ **Record Verifier** | [`/verify`](https://medivault-ecru.vercel.app/verify) — 4-check root hash verification |
 
@@ -414,7 +414,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)**.
 | `NEXT_PUBLIC_ZG_KV_NODE_URL` | 0G-KV node URL |
 | `NEXT_PUBLIC_APP_URL` | Your deployed URL |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | From [cloud.reown.com](https://cloud.reown.com) |
-| `NEXT_PUBLIC_MEDIVAULT_REGISTRY` | `0x47b0E8247d3c176E567C3B48743596f87171403e` |
+| `NEXT_PUBLIC_MEDIVAULT_REGISTRY` | `0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f` |
 
 ---
 
@@ -454,8 +454,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)**.
 - [x] `AGENTS.md` — AI-readable project context
 - [x] `SPEC.md` — full product specification and architecture
 - [x] GitHub topic tags for discoverability
-- [x] **`MediVaultRegistry` smart contract on 0G Mainnet** — [`0x47b0E8247d3c176E567C3B48743596f87171403e`](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e)
-- [x] **ERC-7857 Agentic iNFT upgrade** — `dataHash`, `sealedKey`, `oracle`, `authorizeUsage()`, `revokeUsage()`, `clone()`
+- [x] **ERC-7857 Agentic iNFT** — `MediVaultRegistry` on 0G Mainnet [`0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f`](https://chainscan.0g.ai/address/0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f)
 
 ### 🔄 Upcoming Upgrades
 - [ ] Shareable verified health record card (`/card/[hash]`) with social preview
@@ -480,6 +479,6 @@ MIT — see [LICENSE](LICENSE)
 
 **Built with ❤️ by [Sahil](https://x.com/sahilvishnaliya) & [Sal](https://x.com/salmanch_) for the [0G Zero Cup 2026](https://0g.ai/arena/zero-cup)**
 
-[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [🔍 Verify](https://medivault-ecru.vercel.app/verify) &nbsp;·&nbsp; [📜 Contract](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e) &nbsp;·&nbsp; [🤖 ERC-7857](https://docs.0g.ai/developer-hub/building-on-0g/agentic-id/erc7857) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai) &nbsp;·&nbsp; [0G Zero Cup](https://0g.ai/arena/zero-cup)
+[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [🔍 Verify](https://medivault-ecru.vercel.app/verify) &nbsp;·&nbsp; [📜 Contract](https://chainscan.0g.ai/address/0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f) &nbsp;·&nbsp; [🤖 ERC-7857](https://docs.0g.ai/developer-hub/building-on-0g/agentic-id/erc7857) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai) &nbsp;·&nbsp; [0G Zero Cup](https://0g.ai/arena/zero-cup)
 
 </div>
