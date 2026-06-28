@@ -10,6 +10,7 @@
 *MediVault fixes all three — privately, permanently, on-chain.*
 
 [![Live on 0G Mainnet](https://img.shields.io/badge/0G%20Mainnet-Live-6366f1?style=for-the-badge&logo=ethereum&logoColor=white)](https://medivault-ecru.vercel.app)
+[![Contract Deployed](https://img.shields.io/badge/Contract-0G%20Mainnet-22c55e?style=for-the-badge&logo=ethereum&logoColor=white)](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e)
 [![Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)
 [![0G Zero Cup](https://img.shields.io/badge/0G%20Zero%20Cup-2026-10b981?style=for-the-badge)](https://0g.ai/arena/zero-cup)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
@@ -23,9 +24,23 @@
 <br/>
 
 > "*The only Zero Cup project where your encryption key never leaves your device —
-> and the only working health vault built natively on 0G.*"
+> and the only working health vault with a live smart contract built natively on 0G Mainnet.*"
 
 </div>
+
+---
+
+## 🔗 On-Chain Evidence (0G Mainnet)
+
+| Item | Details |
+|------|--------|
+| 📜 **MediVaultRegistry Contract** | [`0x47b0E8247d3c176E567C3B48743596f87171403e`](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e) |
+| 🌐 **Network** | 0G Mainnet — Chain ID `16661` |
+| 🔍 **Block Explorer** | [View on chainscan.0g.ai](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e) |
+| ⛽ **Live Health Endpoint** | [`/api/og/health`](https://medivault-ecru.vercel.app/api/og/health) — live block + node count |
+| ✅ **Record Verifier** | [`/verify`](https://medivault-ecru.vercel.app/verify) — 4-check root hash verification |
+
+> Every MediVault user mints a soul-bound **Vault Identity NFT** on `MediVaultRegistry`. Your vault is permanently anchored on 0G Mainnet — verifiable by anyone, owned by no one but you.
 
 ---
 
@@ -180,7 +195,7 @@ MediVault is a **self-sovereign health vault**. Connect your MetaMask wallet —
 | 2️⃣ | **Upload a document** | Drop any PDF, image, or lab report. `pdf-parse` + `tesseract.js` OCR handles all formats client-side. |
 | 3️⃣ | **AI explains it** | 0G Compute returns a plain-language summary, extracts conditions / medications / allergies / red flags, and flags anything urgent. |
 | 4️⃣ | **Encrypt & store** | AES-256 ciphertext uploaded to 0G Storage. Merkle root hash indexed in 0G-KV. Your server **never** sees plaintext. |
-| 5️⃣ | **Access anywhere** | Open MediVault on any device, connect wallet → full history appears. No login. No server. No cloud backup needed. |
+| 5️⃣ | **Mint Vault NFT** | `MediVaultRegistry` mints a soul-bound Vault Identity NFT on 0G Mainnet — permanent, on-chain proof your vault exists. |
 
 ---
 
@@ -233,6 +248,7 @@ MediVault is a **self-sovereign health vault**. Connect your MetaMask wallet —
 | Feature | Details |
 |---|---|
 | **Root hash verifier** | Visit `/verify` → enter any record root hash → 4 live checks against 0G Network: chain live, file found, hash valid, explorer link. |
+| **On-chain vault proof** | `MediVaultRegistry.getVaultByAddress(wallet)` returns root hash, record count, timestamps — verifiable by anyone. |
 | **Selective disclosure proofs** | Share cryptographic proof of a single field (e.g. "I am vaccinated") without revealing the full record. Verifiable by anyone at `/verify`. |
 | **0G Health endpoint** | `GET /api/og/health` — live JSON showing 0G chain block, storage node count, indexer status. |
 
@@ -257,6 +273,7 @@ Every feature in MediVault depends on a specific 0G primitive. **Remove 0G and t
 | Decentralised AI inference (no cloud snooping) | **0G Compute** — OpenAI-compatible, TEE-backed | No AI summaries without trusting a centralised API |
 | Tamper-proof record index per wallet | **0G-KV** — key-value store keyed by wallet address | No trustless vault rebuild across devices |
 | Immutable consent + share audit trail | **0G Chain** — on-chain event log | No verifiable proof of who accessed what |
+| Soul-bound vault identity NFT | **MediVaultRegistry** on 0G Mainnet | No permanent on-chain proof of vault activation |
 
 ---
 
@@ -273,6 +290,7 @@ flowchart TD
   K --> ENC
   ENC -->|"ciphertext only"| S(["0G Storage"])
   S --> IDX(["0G-KV index"])
+  IDX -->|"Merkle root"| REG(["📜 MediVaultRegistry\n0G Mainnet"])
   IDX -->|"any device, any time"| V(["✅ Vault"])
   S -->|"ECIES re-encrypt to recipient pubkey"| D(["👩‍⚕️ Doctor's wallet"])
   V -->|"share event"| CL(["0G Chain — consent ledger"])
@@ -324,6 +342,7 @@ Your wallet private key
 | **Rate-limited APIs** | Hybrid L1 in-process + L2 KV-backed rate limiter on all public endpoints. |
 | **ECIES sharing** | `ethers.SigningKey.computePublicKey` + SDK ECIES header. Only the recipient's private key decrypts. |
 | **Merkle root verification** | Every record hash verifiable on-chain. Tampering is cryptographically impossible. |
+| **Soul-bound NFT** | `MediVaultRegistry` blocks all transfers — vault identity stays with the original wallet forever. |
 
 ---
 
@@ -381,6 +400,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 | `NEXT_PUBLIC_ZG_KV_NODE_URL` | 0G-KV node URL |
 | `NEXT_PUBLIC_APP_URL` | Your deployed URL |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | From [cloud.reown.com](https://cloud.reown.com) |
+| `NEXT_PUBLIC_MEDIVAULT_REGISTRY` | `0x47b0E8247d3c176E567C3B48743596f87171403e` |
 
 ---
 
@@ -390,6 +410,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 |---|---|---|
 | Framework | Next.js 14 (App Router) | SSR + API routes in one deploy |
 | Blockchain | 0G Mainnet (chain 16661) via ethers v6 | Native 0G integration |
+| Smart Contract | `MediVaultRegistry` (ERC-721 soul-bound) on 0G Mainnet | On-chain vault identity + root hash anchoring |
 | Storage | `@0gfoundation/0g-storage-ts-sdk` | Decentralised ciphertext storage |
 | AI inference | 0G Compute Router (OpenAI-compatible) | TEE-backed, no centralised cloud |
 | Wallet | MetaMask + Web3Modal / WalletConnect | Universal Web3 wallet support |
@@ -420,10 +441,10 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 - [x] `AGENTS.md` — AI-readable project context for agent/MCP integrations
 - [x] `SPEC.md` — full product specification and architecture
 - [x] GitHub topic tags for discoverability
+- [x] **`MediVaultRegistry` smart contract deployed on 0G Mainnet** — [`0x47b0E8247d3c176E567C3B48743596f87171403e`](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e)
 
 ### 🔄 Upcoming Upgrades
 - [ ] Shareable verified health record card (`/card/[hash]`) with social preview
-- [ ] `MedVaultRegistry` smart contract on 0G Mainnet — on-chain vault activation proof
 - [ ] Selective-disclosure ZK proofs — prove one fact without revealing the full record
 - [ ] MCP server — `@medivault/mcp-server` for AI agent integrations
 - [ ] Wallet-based access control lists — multi-doctor sharing + revocation
@@ -445,6 +466,6 @@ MIT — see [LICENSE](LICENSE)
 
 **Built with ❤️ by [Sahil](https://x.com/sahilvishnaliya) & [Sal](https://x.com/salmanch_) for the [0G Zero Cup 2026](https://0g.ai/arena/zero-cup)**
 
-[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [🔍 Verify](https://medivault-ecru.vercel.app/verify) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai) &nbsp;·&nbsp; [0G Zero Cup](https://0g.ai/arena/zero-cup)
+[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [🔍 Verify](https://medivault-ecru.vercel.app/verify) &nbsp;·&nbsp; [📜 Contract](https://chainscan.0g.ai/address/0x47b0E8247d3c176E567C3B48743596f87171403e) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai) &nbsp;·&nbsp; [0G Zero Cup](https://0g.ai/arena/zero-cup)
 
 </div>
