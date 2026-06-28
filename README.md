@@ -29,6 +29,34 @@
 
 ---
 
+## 🎬 Demo
+
+### Upload → Encrypt → Store on 0G
+
+<div align="center">
+
+![MediVault Upload Demo](docs/screenshots/demo-upload.gif)
+
+*Upload any medical document → AI explains it in plain language → AES-256 encrypted in your browser → stored permanently on 0G*
+
+</div>
+
+---
+
+## ✅ Verified on 0G Network
+
+<div align="center">
+
+![Verified on 0G](docs/screenshots/og-verified.png.png)
+
+*Every record is verifiable on-chain — 4 live checks against 0G Network: chain live ✅ · file found ✅ · hash valid ✅ · explorer confirmed ✅*
+
+🔍 **Try it yourself:** [medivault-ecru.vercel.app/verify](https://medivault-ecru.vercel.app/verify)
+
+</div>
+
+---
+
 ## 📸 Screenshots
 
 ### 🖥️ Desktop
