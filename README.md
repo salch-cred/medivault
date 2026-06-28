@@ -15,13 +15,15 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
 [![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://medivault-ecru.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+[![0G Health](https://img.shields.io/badge/0G%20Health-Live-22c55e?style=for-the-badge&logo=ethereum)](https://medivault-ecru.vercel.app/api/og/health)
+[![Verify on 0G](https://img.shields.io/badge/Verify%20Records-0G%20Network-6366f1?style=for-the-badge)](https://medivault-ecru.vercel.app/verify)
 
-**[🌐 Live App](https://medivault-ecru.vercel.app)** &nbsp;·&nbsp; **[▶️ Demo Video](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)** &nbsp;·&nbsp; **[0G Zero Cup](https://0g.ai/arena/zero-cup)** &nbsp;·&nbsp; **[0G Docs](https://docs.0g.ai)**
+**[🌐 Live App](https://medivault-ecru.vercel.app)** &nbsp;·&nbsp; **[▶️ Demo Video](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)** &nbsp;·&nbsp; **[🔍 Verify Records](https://medivault-ecru.vercel.app/verify)** &nbsp;·&nbsp; **[0G Zero Cup](https://0g.ai/arena/zero-cup)** &nbsp;·&nbsp; **[0G Docs](https://docs.0g.ai)**
 
 <br/>
 
-> “*The only Zero Cup project where your encryption key never leaves your device —
-> and the only working health vault built natively on 0G.*”
+> "*The only Zero Cup project where your encryption key never leaves your device —
+> and the only working health vault built natively on 0G.*"
 
 </div>
 
@@ -133,6 +135,8 @@ Medical records are the most important documents a person owns — yet they're t
 
 MediVault is a **self-sovereign health vault**. Connect your MetaMask wallet — that's your identity, your key, your vault.
 
+> 💡 **Unlike generic document tools or clinical scribes — MediVault is 100% patient-owned. No doctor, no hospital, no company can access your records. Only your wallet key decrypts them. Ever.**
+
 ```
   Upload any document  →  AI explains it in plain language
          →  AES-256 encrypted in your browser
@@ -195,6 +199,14 @@ MediVault is a **self-sovereign health vault**. Connect your MetaMask wallet —
 | **Tamper-proof certificates** | Generate a shareable certificate proving a record exists, is unaltered, and is anchored to 0G — verifiable by anyone, no account needed. |
 | **Consent ledger** | Every share event is written to an immutable, hash-chained audit trail on 0G — who accessed what, and when. Forever. |
 | **Received records inbox** | Doctors and family members can send ECIES-encrypted records directly to your wallet. Delivered to your received tab. |
+
+### 🔍 Verification
+
+| Feature | Details |
+|---|---|
+| **Root hash verifier** | Visit `/verify` → enter any record root hash → 4 live checks against 0G Network: chain live, file found, hash valid, explorer link. |
+| **Selective disclosure proofs** | Share cryptographic proof of a single field (e.g. "I am vaccinated") without revealing the full record. Verifiable by anyone at `/verify`. |
+| **0G Health endpoint** | `GET /api/og/health` — live JSON showing 0G chain block, storage node count, indexer status. |
 
 ### 📲 Mobile & Offline
 
@@ -364,7 +376,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 
 ## 🗺️ Roadmap
 
-### ✅ Shipped (Group Stage)
+### ✅ Shipped (Group Stage — June 24)
 - [x] Wallet-native identity + AES-256 client-side encryption
 - [x] 0G Storage upload + 0G-KV index
 - [x] 0G Compute AI summaries + smart extraction
@@ -374,8 +386,16 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 - [x] PWA — installable, offline-ready
 - [x] Health timeline + lab trend charts
 - [x] Vault-wide AI chat
+- [x] Deployed on **0G Mainnet** (chain 16661) — the only Zero Cup health project on mainnet
 
-### 🔄 Next Rounds
+### ✅ Shipped (Round of 32 — June 28)
+- [x] `/verify` — dual-tab verifier: root hash live check (4-step 0G verification) + selective disclosure proof token
+- [x] `/api/og/verify` — server-side 0G root hash verification endpoint
+- [x] `AGENTS.md` — AI-readable project context for agent/MCP integrations
+- [x] GitHub topic tags for discoverability (`zero-cup`, `0g-labs`, `0g-compute`, `0g-storage`, `zero-cup-2026`)
+- [x] 0G Health + Verify badges added to README
+
+### 🔄 Round of 16 & Beyond (July 3+)
 - [ ] Selective-disclosure ZK proofs — prove one fact without revealing the record
 - [ ] Wallet-based access control lists — multi-doctor sharing + revocation
 - [ ] Background key rotation and re-encryption
@@ -383,6 +403,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 - [ ] Provider-side inbox with notifications
 - [ ] Native mobile app (React Native) with on-device camera capture
 - [ ] 0G DA anchoring for ultra-low-cost bulk record archiving
+- [ ] MCP server — `@medivault/mcp-server` for agent integrations
 
 ---
 
@@ -398,6 +419,6 @@ MIT — see [LICENSE](LICENSE)
 
 **Built with ❤️ by [Sahil](https://x.com/sahilvishnaliya) & [Sal](https://x.com/salmanch_) for the [0G Zero Cup 2026](https://0g.ai/arena/zero-cup)**
 
-[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai) &nbsp;·&nbsp; [0G Zero Cup](https://0g.ai/arena/zero-cup)
+[🌐 Live App](https://medivault-ecru.vercel.app) &nbsp;·&nbsp; [▶️ Demo](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9) &nbsp;·&nbsp; [🔍 Verify](https://medivault-ecru.vercel.app/verify) &nbsp;·&nbsp; [0G Docs](https://docs.0g.ai) &nbsp;·&nbsp; [0G Zero Cup](https://0g.ai/arena/zero-cup)
 
 </div>
