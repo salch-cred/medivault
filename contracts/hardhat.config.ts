@@ -1,3 +1,4 @@
+import pkg from "hardhat";
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import * as dotenv from "dotenv";
@@ -8,12 +9,13 @@ const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.20",
+    version: "0.8.24",
     settings: {
       optimizer: {
         enabled: true,
         runs: 200,
       },
+      evmVersion: "cancun",
     },
   },
   networks: {
@@ -33,7 +35,7 @@ const config: HardhatUserConfig = {
     },
   },
   paths: {
-    sources: "./",          // contracts are in /contracts/
+    sources: "./src",
     tests: "./test",
     cache: "./cache",
     artifacts: "./artifacts",

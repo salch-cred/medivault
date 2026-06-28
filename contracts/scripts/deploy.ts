@@ -1,4 +1,5 @@
-import { ethers } from "hardhat";
+import pkg from "hardhat";
+const { ethers } = pkg;
 
 async function main() {
   console.log("\n🏥 Deploying MediVaultRegistry to 0G Mainnet...");
@@ -30,7 +31,7 @@ async function main() {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("\n📝 Next steps:");
   console.log(`   1. Copy contract address: ${address}`);
-  console.log("   2. Add to .env.local: NEXT_PUBLIC_MEDIVAULT_REGISTRY=${address}");
+  console.log("   2. Add to .env.local: NEXT_PUBLIC_MEDIVAULT_REGISTRY=" + address);
   console.log("   3. Update README with the contract address");
   console.log("   4. Verify on chainscan.0g.ai");
 }
