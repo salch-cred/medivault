@@ -1,0 +1,18 @@
+{
+  "name": "medivault-contracts",
+  "version": "1.0.0",
+  "description": "MediVault smart contracts — 0G Mainnet",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network zg_mainnet",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network zg_testnet",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/contracts": "^5.0.0",
+    "dotenv": "^16.0.0",
+    "hardhat": "^2.22.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,68 @@
+import type { RecordMeta } from './types'
+
+/**
+ * Storage abstraction over 0G decentralized storage. The ONLY implementation
+ * is OgStorageAdapter (real 0G SDK). No mock implementation exists.
+ */
+export interface StorageAdapter {
+  /**
+   * AES-256 encrypt client-side, then upload ciphertext to 0G.
+   * `onProgress` receives raw 0G SDK status messages (tx submitted, waiting for
+   * storage node to sync, uploading segments, finalized) for live UI feedback.
+   */
+  uploadEncrypted(
+    data: Uint8Array | File,
+    key: Uint8Array,
+    onProgress?: (message: string) => void,
+  ): Promise<{ rootHash: string; txHash?: string }>
+
+  /**
+   * Download ciphertext from 0G and AES-256 decrypt client-side.
+   * `onProgress` reports propagation-retry status while a just-uploaded file is
+   * still becoming locatable on the indexer.
+   */
+  downloadDecrypted(
+    rootHash: string,
+    key: Uint8Array,
+    onProgress?: (message: string) => void,
+  ): Promise<Uint8Array>
+
+  /**
+   * Encrypt to a recipient wallet public key (ECIES) and upload to 0G as the
+   * durable copy of the share envelope. The durable upload is best-effort:
+   * `durable` is false when the on-chain copy did not land (e.g. require(false)
+   * because the entry is already stored / mid-registration), in which case the
+   * caller delivers via the instant KV envelope instead.
+   */
+  shareToRecipient(
+    data: Uint8Array,
+    recipientPubKey: string,
+  ): Promise<{ rootHash: string; durable: boolean }>
+
+  /**
+   * Verify the stored ciphertext still matches its Merkle root. `onProgress`
+   * reports propagation-retry status for a freshly-uploaded file.
+   */
+  verifyIntegrity(
+    rootHash: string,
+    onProgress?: (message: string) => void,
+  ): Promise<boolean>
+
+  /** Download ECIES ciphertext from 0G and decrypt using private key. */
+  downloadDecryptedShared(
+    rootHash: string,
+    privateKey: string,
+    onProgress?: (message: string) => void,
+  ): Promise<Uint8Array>
+}
+
+/**
+ * Decentralized record index over 0G-KV. The ONLY implementation is
+ * KvIndexAdapter (real 0G-KV). No mock implementation exists.
+ */
+export interface IndexAdapter {
+  put(record: RecordMeta): Promise<void>
+  list(owner: string): Promise<RecordMeta[]>
+  get(id: string): Promise<RecordMeta | null>
+  registerPublicKey(publicKey: string): Promise<void>
+}

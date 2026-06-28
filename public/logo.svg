@@ -1,0 +1,12 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MediVault">
+  <rect width="1024" height="1024" rx="170" fill="#FBEFA8"/>
+  <path d="M215 940 L215 340 A148.5 148.5 0 0 1 512 340 L512 940 M512 340 A148.5 148.5 0 0 1 809 340 L809 940" fill="none" stroke="#FF3B2F" stroke-width="170" stroke-linecap="butt" stroke-linejoin="round"/>
+  <mask id="mMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+    <rect width="1024" height="1024" fill="black"/>
+    <path d="M215 940 L215 340 A148.5 148.5 0 0 1 512 340 L512 940 M512 340 A148.5 148.5 0 0 1 809 340 L809 940" fill="none" stroke="white" stroke-width="170" stroke-linecap="butt" stroke-linejoin="round"/>
+  </mask>
+  <g mask="url(#mMask)">
+    <rect x="432" y="0" width="100" height="1024" fill="#FFFFFF"/>
+    <rect x="0" y="490" width="1024" height="125" fill="#FFFFFF"/>
+  </g>
+</svg>
