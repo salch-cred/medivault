@@ -14,6 +14,8 @@
 [![ERC-7857 iNFT](https://img.shields.io/badge/ERC--7857-Agentic%20iNFT-a855f7?style=for-the-badge&logo=ethereum&logoColor=white)](https://docs.0g.ai/developer-hub/building-on-0g/agentic-id/erc7857)
 [![Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/zyibyFRAVTY?si=f5Rr-oHN2UvYzZM9)
 [![0G Zero Cup](https://img.shields.io/badge/0G%20Zero%20Cup-2026-10b981?style=for-the-badge)](https://0g.ai/arena/zero-cup)
+[![Ranked #1](https://img.shields.io/badge/Zero%20Cup-Ranked%20%231%20by%20Stars-FFD700?style=for-the-badge&logo=trophy&logoColor=black)](https://github.com/salch-cred/medivault)
+[![GitHub Stars](https://img.shields.io/github/stars/salch-cred/medivault?style=for-the-badge&logo=github&color=yellow)](https://github.com/salch-cred/medivault/stargazers)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
 [![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://medivault-ecru.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
@@ -25,7 +27,8 @@
 <br/>
 
 > "*The only Zero Cup project where your encryption key never leaves your device —
-> and the only working health vault with a live smart contract on 0G Mainnet implementing ERC-7857 iNFT.*"
+> and the only working health vault with a live ERC-7857 iNFT on 0G Mainnet.
+> **#1 ranked by stars across all 218 submissions.** 6× more stars than the nearest competitor.*"
 
 </div>
 
@@ -452,11 +455,16 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)**.
 - [x] Deployed on **0G Mainnet** (chain 16661)
 - [x] `/verify` — dual-tab verifier: root hash live check + selective disclosure proof token
 - [x] `AGENTS.md` — AI-readable project context
-- [x] `SPEC.md` — full product specification and architecture
-- [x] GitHub topic tags for discoverability
+- [x] `SPEC.md` — full product specification and architecture (500+ lines)
+- [x] `PITCH.md` — competition pitch document
+- [x] GitHub topic tags for discoverability (9 tags)
 - [x] **ERC-7857 Agentic iNFT** — `MediVaultRegistry` on 0G Mainnet [`0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f`](https://chainscan.0g.ai/address/0x4E3D3450dc98D3022Ac299D0Ed7AFf80Bd58FA4f)
+- [x] ERC-7857 v2 redeployed with `IAgentOracle`, `authorizeUsage()`, `revokeUsage()`, `clone()`, `ReentrancyGuard`
+- [x] Vercel environment updated with live contract address
+- [x] Repository cleaned up — zero open issues, zero debug files
+- [x] **#1 ranked by GitHub stars** across all 218 Zero Cup submissions (6⭐ vs 1⭐ nearest competitor)
 
-### 🔄 Upcoming Upgrades
+### 🔄 Upcoming (Round of 32 — Jul 3)
 - [ ] Shareable verified health record card (`/card/[hash]`) with social preview
 - [ ] Selective-disclosure ZK proofs — prove one fact without revealing the full record
 - [ ] MCP server — `@medivault/mcp-server` for AI agent integrations
