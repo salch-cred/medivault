@@ -376,7 +376,7 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 
 ## 🗺️ Roadmap
 
-### ✅ Shipped (Group Stage — June 24)
+### ✅ Completed
 - [x] Wallet-native identity + AES-256 client-side encryption
 - [x] 0G Storage upload + 0G-KV index
 - [x] 0G Compute AI summaries + smart extraction
@@ -386,24 +386,22 @@ Get free gas at **[faucet.0g.ai](https://faucet.0g.ai)** — uploading and index
 - [x] PWA — installable, offline-ready
 - [x] Health timeline + lab trend charts
 - [x] Vault-wide AI chat
-- [x] Deployed on **0G Mainnet** (chain 16661) — the only Zero Cup health project on mainnet
-
-### ✅ Shipped (Round of 32 — June 28)
-- [x] `/verify` — dual-tab verifier: root hash live check (4-step 0G verification) + selective disclosure proof token
+- [x] Deployed on **0G Mainnet** (chain 16661)
+- [x] `/verify` — dual-tab verifier: root hash live check + selective disclosure proof token
 - [x] `/api/og/verify` — server-side 0G root hash verification endpoint
 - [x] `AGENTS.md` — AI-readable project context for agent/MCP integrations
-- [x] GitHub topic tags for discoverability (`zero-cup`, `0g-labs`, `0g-compute`, `0g-storage`, `zero-cup-2026`)
-- [x] 0G Health + Verify badges added to README
+- [x] `SPEC.md` — full product specification and architecture
+- [x] GitHub topic tags for discoverability
 
-### 🔄 Round of 16 & Beyond (July 3+)
-- [ ] Selective-disclosure ZK proofs — prove one fact without revealing the record
+### 🔄 Upcoming Upgrades
+- [ ] Shareable verified health record card (`/card/[hash]`) with social preview
+- [ ] `MedVaultRegistry` smart contract on 0G Mainnet — on-chain vault activation proof
+- [ ] Selective-disclosure ZK proofs — prove one fact without revealing the full record
+- [ ] MCP server — `@medivault/mcp-server` for AI agent integrations
 - [ ] Wallet-based access control lists — multi-doctor sharing + revocation
-- [ ] Background key rotation and re-encryption
-- [ ] Richer document types — insurance cards, vaccination records, genomics
-- [ ] Provider-side inbox with notifications
+- [ ] Lab value trend alerts — AI-triggered notifications for abnormal changes
 - [ ] Native mobile app (React Native) with on-device camera capture
 - [ ] 0G DA anchoring for ultra-low-cost bulk record archiving
-- [ ] MCP server — `@medivault/mcp-server` for agent integrations
 
 ---
 
